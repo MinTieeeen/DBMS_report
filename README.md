@@ -80,7 +80,7 @@ DBMS_report/
 │   ├── 1_Introduction.tex                   # Chương 1. Giới thiệu đề tài
 │   ├── 2_DBMS_Overview.tex                  # Chương 2. Tổng quan về hệ quản trị CSDL
 │   ├── 3_Application_Database_Design.tex    # Chương 3. Tổng quan ứng dụng và thiết kế CSDL
-│   ├── 4_DBMS_Topics.tex                    # Chương 4. Khung chương, \input các chủ đề bên dưới
+│   ├── 4_DBMS_Topics.tex                    # Chương 4. So sánh và nghiên cứu (\input các chủ đề bên dưới)
 │   ├── 4_DBMS_Topics/
 │   │   ├── 4_1_Data_Storage.tex             # 4.1 Quản lý và lưu trữ dữ liệu
 │   │   ├── 4_2_Query_Processing.tex         # 4.2 Xử lý truy vấn
@@ -88,7 +88,8 @@ DBMS_report/
 │   │   ├── 4_4_Concurrency_Control.tex      # 4.4 Kiểm soát đồng thời
 │   │   ├── 4_5_Backup_Recovery.tex          # 4.5 Sao lưu và phục hồi
 │   │   └── 4_6_Summary.tex                  # 4.6 Tổng hợp (hiện chưa được \input trong 4_DBMS_Topics.tex)
-│   └── 5_Architecture_Implementation.tex    # Chương 5. Thiết kế kiến trúc và triển khai ứng dụng
+│   ├── 5_Architecture_Implementation.tex    # Chương 5. Thiết kế kiến trúc và triển khai ứng dụng
+│   └── 6_Conclusion.tex                     # Chương 6. Kết luận và đánh giá
 ├── image/
 │   ├── HCMUT_official_logo.png
 │   ├── chapter3/                # Ảnh của chương 3 (ERD, lược đồ, ...)
