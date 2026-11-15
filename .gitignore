@@ -1,0 +1,38 @@
+# ---- LaTeX build artifacts ----
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+*.log
+*.toc
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.synctex(busy)
+*.fls
+*.fdb_latexmk
+*.xdv
+*.hst
+*.ver
+*.nav
+*.snm
+*.vrb
+
+# minted (pygments) cache
+_minted*/
+*.pyg
+
+# Output PDF
+main.pdf
+
+# ---- Editors / OS ----
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

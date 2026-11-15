@@ -1,0 +1,243 @@
+\documentclass[a4paper]{article} %tạo một bản báo cáo
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc} %để sử dụng tiếng việt
+\usepackage[fontsize=11pt]{scrextend} %set font=13pt
+\linespread{1.2}
+\usepackage[paperheight=29.7cm,paperwidth=21cm,right=2cm,left=1.8cm,top=2cm,bottom=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amsmath, amssymb, txfonts}
+\usepackage{listings}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{diagbox}
+\usepackage{minted}
+\usepackage{vhistory}
+\usepackage{indentfirst}
+\usepackage{multirow}
+\usepackage{graphicx} %thư viện chèn ảnh
+\usepackage{float} % set vị trí chèn ảnh
+\usepackage{tikz} % thư viện tạo khung bìa
+\usetikzlibrary{calc} % thư viện tikz
+\renewcommand{\figurename}{\fontsize{12pt}{0pt}\selectfont \bfseries Hình}
+\renewcommand{\listfigurename}{Danh mục hình ảnh}
+\renewcommand{\listtablename}{Danh mục bảng}
+\renewcommand{\thefigure}{\thesection.\arabic{figure}}
+\usepackage{caption}
+\usepackage{enumerate} % để tùy chỉnh itemize
+\usepackage{array}    % để dùng m{width}
+\captionsetup[figure]{labelsep=space}
+\newtheorem{theorem}{Định lý}[section]
+\newtheorem{defn}{Định nghĩa}[section]
+\newtheorem{vd}{Ví dụ}[section]
+\newtheorem{proof}{Chứng minh}
+\usepackage{adjustbox}
+\usepackage{esint}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue]{hyperref}
+\usepackage{placeins}
+\usepackage{subcaption}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{lastpage}
+\usepackage{enumerate}
+\usepackage{tcolorbox}
+\usepackage{changepage}
+\usepackage{hyperref}
+\usepackage[vietnamese]{babel}
+\usepackage[
+backend=biber,
+style=numeric,
+sorting=ynt
+]{biblatex}
+\DeclareLanguageMapping{vietnamese}{english}
+
+% ================= THÔNG TIN CHUNG CỦA BÁO CÁO =================
+\newcommand{\CourseName}{Hệ quản trị cơ sở dữ liệu}
+\newcommand{\CourseNameUpper}{HỆ QUẢN TRỊ CƠ SỞ DỮ LIỆU}
+\newcommand{\CourseCode}{CO3021}
+\newcommand{\ReportTitle}{XÂY DỰNG ỨNG DỤNG ĐỌC VÀ SÁNG TÁC TRUYỆN TRỰC TUYẾN NOVELLE TRÊN NỀN MS SQL SERVER VÀ REDIS}
+\newcommand{\Lecturer}{ThS. Lê Thị Bảo Thu} % TODO: điền tên GVHD
+\newcommand{\ClassCode}{L01} % TODO: kiểm tra lại lớp
+
+% ================= THÀNH VIÊN NHÓM =================
+\newcommand{\StudentOneName}{Huỳnh Minh Tiến}
+\newcommand{\StudentOneID}{2313425}
+\newcommand{\StudentOneEmail}{tien.huynhminhcse@hcmut.edu.vn}
+\newcommand{\StudentTwoName}{Nguyễn Khánh Trinh}
+\newcommand{\StudentTwoID}{2313579}
+\newcommand{\StudentTwoEmail}{trinh.nguyenkhanh@hcmut.edu.vn}
+\newcommand{\StudentThreeName}{Đặng Quang Phong}
+\newcommand{\StudentThreeID}{2312613}
+\newcommand{\StudentThreeEmail}{phong.danghandsomek@hcmut.edu.vn}
+\newcommand{\StudentFourName}{Nguyễn Hoàng Minh Quân}
+\newcommand{\StudentFourID}{2312836}
+\newcommand{\StudentFourEmail}{quan.nguyen090505@hcmut.edu.vn}
+\newcommand{\StudentFiveName}{Trần Nguyễn Phú Nghĩa}
+\newcommand{\StudentFiveID}{2312284}
+\newcommand{\StudentFiveEmail}{nghia.trannguyenphu@hcmut.edu.vn}
+
+% ================= ĐỊNH DẠNG TIÊU ĐỀ CHƯƠNG =================
+% Mỗi \section là một chương: "CHƯƠNG 1. GIỚI THIỆU ĐỀ TÀI", bắt đầu ở trang mới
+\usepackage{titlesec}
+\titleformat{\section}{\normalfont\Large\bfseries}{CHƯƠNG~\thesection.}{0.5em}{\MakeUppercase}
+\newcommand{\sectionbreak}{\clearpage}
+
+% \renewcommand\thesection{\Roman{section}.}            % 1, 2, 3
+% \renewcommand\thesubsection{\arabic{subsection}/}        % a, b, c
+% \renewcommand\thesubsubsection{\alph{subsubsection}/}% 1, 2, 3 (lại số nhỏ)
+
+% --- Nhưng vẫn muốn figure/table/equation dùng số thường ---
+\makeatletter
+\renewcommand{\thefigure}{\arabic{section}.\arabic{subsection}.\arabic{figure}}
+\renewcommand{\thetable}{\arabic{section}.\arabic{subsection}.\arabic{table}}
+\renewcommand{\theequation}{\arabic{section}.\arabic{subsection}.\arabic{equation}}
+% \geometry{left=3cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\captionsetup{font=small,labelfont=bf}
+
+% Reset lại bộ đếm hình/bảng/phương trình mỗi khi qua section mới
+\@addtoreset{figure}{subsection}
+\@addtoreset{table}{subsection}
+\@addtoreset{equation}{subsection}
+\makeatother
+\addbibresource{references.bib}
+
+\setlength{\headheight}{40pt}
+\pagestyle{fancy}
+\fancyhead{} % clear all header fields
+\fancyhead[L]{
+ \begin{tabular}{rl}
+    \begin{picture}(25,15)(0,0)
+    \put(0,-8){\includegraphics[width=8mm, height=8mm]{image/HCMUT_official_logo.png}}
+    %\put(0,-8){\epsfig{width=10mm,figure=hcmut.eps}}
+   \end{picture}&
+	%\includegraphics[width=8mm, height=8mm]{01_logobachkhoa.png} & %
+	\begin{tabular}{l}
+		\textbf{\bf \ttfamily ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH}\\
+		\textbf{\bf \ttfamily TRƯỜNG ĐẠI HỌC BÁCH KHOA}
+	\end{tabular} 	
+ \end{tabular}
+}
+\fancyhead[R]{
+	\begin{tabular}{l}
+		\tiny \bf \\
+		\tiny \bf 
+	\end{tabular}  }
+\fancyfoot{} % clear all footer fields
+\fancyfoot[L]{\scriptsize \ttfamily Báo cáo Bài tập lớn - Môn: \CourseName{} (\CourseCode)}
+\fancyfoot[R]{\scriptsize \ttfamily Trang {\thepage}/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+
+
+\begin{document}
+    \begin{titlepage}
+        \begin{tikzpicture}[overlay,remember picture]
+			\draw [line width=3pt]
+			($ (current page.north west) + (2.0cm,-2.0cm) $)
+			rectangle
+			($ (current page.south east) + (-2.0cm,2.5cm) $);
+			\draw [line width=0.5pt]
+			($ (current page.north west) + (2.1cm,-2.1cm) $)
+			rectangle
+			($ (current page.south east) + (-2.1cm,2.6cm) $);
+		\end{tikzpicture}
+		\begin{center}
+			\vspace{-6pt} \fontsize{13pt}{0pt}\selectfont ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH \\
+			\textbf{\fontsize{16pt}{0pt}\selectfont TRƯỜNG ĐẠI HỌC BÁCH KHOA}\\
+            \textbf{\fontsize{16pt}{0pt}\selectfont KHOA KHOA HỌC VÀ KỸ THUẬT MÁY TÍNH}
+			\vspace{1cm}
+			\begin{figure}[H]
+				\centering
+				\includegraphics[width=4.318cm,height=4.318cm]{image/HCMUT_official_logo.png}
+			\end{figure}
+			\vspace{0.5cm}
+            \rule{0.7\linewidth}{1pt} \\[0.3cm] % Đường thẳng trên
+			\textbf{\fontsize{16pt}{0pt}\selectfont BÁO CÁO BÀI TẬP LỚN}\\
+			\textbf{\fontsize{16pt}{0pt}\selectfont MÔN: \CourseNameUpper{} (\CourseCode)}\\
+                \vspace{0.5cm}
+                \parbox{0.9\linewidth}{\centering\textbf{\fontsize{16pt}{20pt}\selectfont \ReportTitle}}\\
+            \vspace{0.5cm}
+            \rule{0.7\linewidth}{1pt} \\[1cm] % Đường thẳng dưới
+		\end{center}
+
+    \begin{table}[h]
+    \centering
+        \begin{tabular}{rl}
+        \hspace{3 cm}\textbf{GVHD}:
+        & \Lecturer\\
+        \textbf{Lớp}: & \ClassCode\\
+        \textbf{Sinh viên thực hiện}: & \StudentOneName{} - \StudentOneID\\
+        & \StudentTwoName{} - \StudentTwoID\\
+        & \StudentThreeName{} - \StudentThreeID\\
+        & \StudentFourName{} - \StudentFourID\\
+        & \StudentFiveName{} - \StudentFiveID\\
+        \end{tabular}
+    \end{table}
+        \begin{center}
+			\fontsize{12pt}{0pt}\selectfont\ Thành phố Hồ Chí Minh, tháng \number\month\space năm \number\year\\
+		\end{center}
+    \end{titlepage}
+    \cleardoublepage
+
+    \begin{center}
+        \fontsize{13pt}{0pt}\selectfont \textbf{DANH SÁCH THÀNH VIÊN} \\
+        
+    \end{center}
+    \hspace{-1cm}
+
+    \begin{table}[H]
+        \centering
+        \small
+        \renewcommand{\arraystretch}{1.4}
+        \setlength{\tabcolsep}{8pt}
+        \begin{tabular}{|c|m{4.2cm}|c|m{6.2cm}|>{\centering\arraybackslash}m{1.5cm}|}
+            \hline
+            \textbf{STT} & \textbf{Họ và tên} & \textbf{MSSV} & \textbf{Nhiệm vụ} & \textbf{\% Hoàn thành}\\
+            \hline
+            1 & \StudentOneName & \StudentOneID & & 100 \\
+            \hline
+            2 & \StudentTwoName & \StudentTwoID & & 100 \\
+            \hline
+            3 & \StudentThreeName & \StudentThreeID & & 100 \\
+            \hline
+            4 & \StudentFourName & \StudentFourID & & 100 \\
+            \hline
+            5 & \StudentFiveName & \StudentFiveID & & 100 \\
+            \hline
+        \end{tabular}
+    \end{table}
+    \textbf{Ghi chú:} 
+
+
+    \cleardoublepage
+    \tableofcontents
+    \cleardoublepage
+    \phantomsection
+    \addcontentsline{toc}{section}{Danh mục bảng}
+    \listoftables
+    \cleardoublepage
+    \phantomsection
+    \addcontentsline{toc}{section}{Danh mục hình ảnh}
+    \listoffigures
+    \cleardoublepage
+    \begin{versionhistory}
+        \vhEntry{1.0}{2026.11.15}{TienHM}{Khởi tạo cấu trúc báo cáo môn \CourseName{}}
+    \end{versionhistory}
+    \cleardoublepage
+
+    \include{section/1_Introduction}
+    \include{section/2_DBMS_Overview}
+    \include{section/3_Application_Database_Design}
+    \include{section/4_DBMS_Topics}
+    \include{section/5_Architecture_Implementation}
+    \cleardoublepage
+    \nocite{elmasri2016fundamentals,silberschatz2019database,mssqldocs,redisdocs,carlson2013redis}
+    \printbibliography[heading=bibintoc,title={Tài liệu tham khảo}]
+    \appendix
+    \cleardoublepage
+    \phantomsection
+    
+    \include{appendix}
+\end{document}
