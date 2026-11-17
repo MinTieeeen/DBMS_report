@@ -9,31 +9,222 @@
 
 \textbf{Novelle} là một ứng dụng web cho phép người dùng đọc và sáng tác truyện dài kỳ trực tuyến. Nội dung truyện do chính người dùng viết và đăng tải theo từng chương. Ứng dụng được xây dựng theo mô hình client--server: phía client là một ứng dụng web chạy trên trình duyệt, phía server cung cấp REST API để xử lý nghiệp vụ và truy xuất dữ liệu.
 
+\subsubsection{Các bên liên quan chính}
+\label{subsubsec:stakeholders}
+
+\begin{itemize}
+    \item \textbf{Khách:} người truy cập chưa đăng nhập, có thể xem trang chủ, tìm kiếm, xem thông tin truyện, tác giả và đọc các chương đã đăng.
+    \item \textbf{Người đọc:} người dùng đã đăng ký tài khoản (vai trò mặc định khi đăng ký), có thể đọc truyện, lưu vị trí đọc, quản lý thư viện cá nhân, theo dõi truyện và tác giả, đánh giá truyện và gửi yêu cầu trở thành tác giả.
+    \item \textbf{Tác giả:} người đọc đã được quản trị viên duyệt yêu cầu, giữ mọi quyền của người đọc và được sử dụng thêm khu vực sáng tác để tạo, quản lý, phát hành truyện và theo dõi thống kê tác phẩm của mình.
+    \item \textbf{Quản trị viên:} người vận hành nền tảng, chịu trách nhiệm quản lý tài khoản, duyệt yêu cầu trở thành tác giả, kiểm duyệt nội dung, quản lý danh mục thể loại, thẻ và theo dõi thống kê toàn hệ thống; quản trị viên không sáng tác và không đánh giá truyện.
+\end{itemize}
+
 \subsubsection{Mục tiêu và phạm vi ứng dụng}
 
 Ứng dụng hướng tới việc cung cấp đầy đủ các luồng chính của một nền tảng truyện trực tuyến, bao gồm: tìm và đọc truyện, quản lý thư viện cá nhân, sáng tác và phát hành chương, và quản trị nội dung. Phạm vi của ứng dụng giới hạn ở các chức năng cốt lõi này, trong đó ưu tiên các thao tác thêm, sửa, xoá và truy vấn dữ liệu được hiện thực đầy đủ.
-
-\subsubsection{Các chức năng chính của ứng dụng}
-
-\begin{itemize}
-    \item \textbf{Trang chủ và tìm kiếm:} hiển thị truyện mới cập nhật, xem nhiều, đánh giá cao; tìm truyện theo từ khoá và lọc theo thể loại, thẻ, trạng thái, điểm đánh giá.
-    \item \textbf{Chi tiết truyện và đọc chương:} xem thông tin truyện, mục lục, trang tác giả; đọc chương và tự động lưu vị trí đọc.
-    \item \textbf{Thư viện cá nhân:} lịch sử đọc, truyện và tác giả đang theo dõi, tủ truyện tự tạo.
-    \item \textbf{Đánh giá:} chấm điểm và viết nhận xét cho truyện.
-    \item \textbf{Đăng ký làm tác giả:} gửi yêu cầu kèm bút danh và theo dõi trạng thái xét duyệt.
-    \item \textbf{Studio sáng tác:} tạo và quản lý truyện, viết chương với bản nháp tự động lưu, chia tập, hẹn giờ đăng, xem lại các phiên bản chỉnh sửa, và xem thống kê lượt xem, lượt theo dõi, điểm đánh giá.
-    \item \textbf{Quản trị:} quản lý và khoá tài khoản, duyệt yêu cầu tác giả, ẩn hoặc gỡ truyện và nhận xét vi phạm, quản lý thể loại và thẻ, xem thống kê toàn hệ thống.
-\end{itemize}
 
 % ===================================================================
 \subsection{Yêu cầu chức năng của hệ thống}
 \label{subsec:functional-requirements}
 
-\subsubsection{Danh sách các yêu cầu chức năng}
-% TODO
+\subsubsection{Quản lý tài khoản}
 
-\subsubsection{Mô tả chi tiết các chức năng}
-% TODO
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-1.1 & Hệ thống phải cho phép khách đăng ký tài khoản bằng tên đăng nhập, email, mật khẩu và tên hiển thị; tên đăng nhập và email không được trùng với tài khoản đã có, và tài khoản mới được tạo với vai trò người đọc. & Khách \\ \hline
+FR-1.2 & Hệ thống phải cho phép thành viên xem và cập nhật hồ sơ cá nhân (tên hiển thị, phần giới thiệu) và đổi mật khẩu sau khi nhập đúng mật khẩu hiện tại. & Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm quản lý tài khoản}
+\label{tab:fr-account}
+\end{table}
+
+\subsubsection{Khám phá và tìm kiếm truyện}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-2.1 & Hệ thống phải hiển thị trang chủ gồm các danh sách truyện mới cập nhật, mới đăng, được đánh giá cao, được xem nhiều và đã hoàn thành. & Khách, Thành viên \\ \hline
+FR-2.2 & Hệ thống phải cho phép người dùng tìm truyện theo từ khoá trong tên hoặc phần giới thiệu (gõ không dấu vẫn tìm được), lọc kết hợp theo thể loại, thẻ, tình trạng, giới hạn độ tuổi, số chương và điểm đánh giá tối thiểu, sắp xếp theo thời gian cập nhật, lượt xem, điểm đánh giá hoặc lượt theo dõi, và xem kết quả theo từng trang. & Khách, Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm khám phá và tìm kiếm truyện}
+\label{tab:fr-discover}
+\end{table}
+
+\subsubsection{Xem chi tiết truyện và tác giả}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-3.1 & Hệ thống phải cho phép người dùng xem trang chi tiết truyện gồm ảnh bìa, phần giới thiệu, tác giả, thể loại, thẻ, tình trạng, lượt xem, lượt theo dõi, điểm đánh giá và mục lục các chương đã đăng được nhóm theo tập; truyện chưa công khai và chương chưa đăng không được hiển thị. & Khách, Thành viên \\ \hline
+FR-3.2 & Hệ thống phải cho phép người dùng xem trang tác giả gồm bút danh, phần giới thiệu, số người theo dõi, thống kê tổng quan và danh sách truyện đã công khai của tác giả. & Khách, Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm xem chi tiết truyện và tác giả}
+\label{tab:fr-detail}
+\end{table}
+
+\subsubsection{Đọc truyện}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-4.1 & Hệ thống phải cho phép người dùng đọc nội dung chương đã đăng, chuyển sang chương liền trước hoặc liền sau, và ghi nhận lượt xem cho chương và truyện; một người đọc lại cùng một chương trong vòng 30 phút chỉ được tính một lượt. & Khách, Thành viên \\ \hline
+FR-4.2 & Hệ thống phải tự động lưu vị trí đọc gần nhất của thành viên trong mỗi truyện và cho phép thành viên đọc tiếp từ đúng vị trí đó. & Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm đọc truyện}
+\label{tab:fr-reading}
+\end{table}
+
+\subsubsection{Thư viện cá nhân}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-5.1 & Hệ thống phải cho phép thành viên xem lịch sử đọc theo thứ tự đọc gần nhất và xoá truyện khỏi lịch sử. & Thành viên \\ \hline
+FR-5.2 & Hệ thống phải cho phép thành viên theo dõi hoặc bỏ theo dõi truyện và tác giả, và xem danh sách truyện, tác giả đang theo dõi; tác giả không được tự theo dõi chính mình. & Thành viên \\ \hline
+FR-5.3 & Hệ thống phải cho phép thành viên tạo, sửa, xoá tủ truyện ở chế độ công khai hoặc riêng tư, thêm truyện vào tủ kèm ghi chú, bỏ truyện khỏi tủ và sắp xếp lại thứ tự; tủ công khai được người khác xem, tủ riêng tư chỉ chủ sở hữu xem được. & Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm thư viện cá nhân}
+\label{tab:fr-library}
+\end{table}
+
+\subsubsection{Đánh giá truyện}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-6.1 & Hệ thống phải cho phép người dùng chấm điểm truyện từ 1 đến 5 sao kèm nhận xét, sửa hoặc xoá đánh giá của mình; mỗi người chỉ có một đánh giá cho mỗi truyện và tác giả không được đánh giá truyện của chính mình. & Người đọc, Tác giả \\ \hline
+FR-6.2 & Hệ thống phải hiển thị danh sách nhận xét của truyện cùng điểm trung bình, tổng số lượt đánh giá và số lượt đánh giá ở từng mức điểm. & Khách, Thành viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm đánh giá truyện}
+\label{tab:fr-rating}
+\end{table}
+
+\subsubsection{Đăng ký trở thành tác giả}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-7.1 & Hệ thống phải cho phép người đọc gửi yêu cầu trở thành tác giả gồm bút danh đề xuất và lời giới thiệu; bút danh không được trùng với tác giả đã có và mỗi người chỉ có tối đa một yêu cầu đang chờ duyệt. & Người đọc \\ \hline
+FR-7.2 & Hệ thống phải cho phép người đọc theo dõi trạng thái và phản hồi của các yêu cầu đã gửi, huỷ yêu cầu đang chờ, và chuyển tài khoản sang vai trò tác giả ngay khi yêu cầu được duyệt. & Người đọc \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm đăng ký trở thành tác giả}
+\label{tab:fr-author-request}
+\end{table}
+
+\subsubsection{Quản lý truyện}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-8.1 & Hệ thống phải cho phép tác giả tạo truyện mới ở trạng thái bản nháp và chỉnh sửa thông tin truyện, gồm tên, phần giới thiệu, ảnh bìa, giới hạn độ tuổi, tình trạng, từ 1 đến 3 thể loại (có đúng một thể loại chính) và tối đa 10 thẻ. & Tác giả \\ \hline
+FR-8.2 & Hệ thống phải cho phép tác giả công khai truyện khi truyện đã có ít nhất một chương được đăng, chuyển truyện về bản nháp hoặc xoá truyện của mình. & Tác giả \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm quản lý truyện}
+\label{tab:fr-story}
+\end{table}
+
+\subsubsection{Sáng tác chương}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-9.1 & Hệ thống phải cho phép tác giả tạo, chỉnh sửa và xoá tập và chương của truyện, trong đó nội dung chương được tự động lưu nháp trong lúc soạn thảo. & Tác giả \\ \hline
+FR-9.2 & Hệ thống phải cho phép tác giả đăng chương ngay hoặc hẹn giờ đăng vào một thời điểm trong tương lai, và tự động đăng chương khi đến giờ hẹn; chương không có nội dung thì không được đăng. & Tác giả \\ \hline
+FR-9.3 & Hệ thống phải lưu lại phiên bản cũ mỗi khi chương được chỉnh sửa và cho phép tác giả xem, khôi phục một trong 10 phiên bản gần nhất. & Tác giả \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm sáng tác chương}
+\label{tab:fr-chapter}
+\end{table}
+
+\subsubsection{Thống kê của tác giả}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-10.1 & Hệ thống phải hiển thị cho tác giả số liệu tổng quan và thống kê từng truyện, gồm số chương, số chữ, lượt xem, lượt theo dõi và điểm đánh giá. & Tác giả \\ \hline
+FR-10.2 & Hệ thống phải hiển thị biểu đồ lượt xem theo ngày hoặc theo tháng cho toàn bộ hoặc từng truyện, cùng thông tin về người theo dõi mới. & Tác giả \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm thống kê của tác giả}
+\label{tab:fr-author-stats}
+\end{table}
+
+\subsubsection{Quản lý người dùng và duyệt tác giả}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-11.1 & Hệ thống phải cho phép quản trị viên tìm kiếm, lọc người dùng theo vai trò, trạng thái, từ khoá và ngày đăng ký, và xem chi tiết từng tài khoản. & Quản trị viên \\ \hline
+FR-11.2 & Hệ thống phải cho phép quản trị viên khoá tài khoản vi phạm kèm lý do và mở khoá lại; tài khoản bị khoá phải bị đăng xuất ngay và không thể đăng nhập, và không được khoá tài khoản quản trị viên. & Quản trị viên \\ \hline
+FR-11.3 & Hệ thống phải cho phép quản trị viên xem danh sách yêu cầu trở thành tác giả, duyệt hoặc từ chối kèm ghi chú phản hồi; mỗi yêu cầu chỉ được xử lý một lần, kể cả khi hai quản trị viên thao tác cùng lúc. & Quản trị viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm quản lý người dùng và duyệt tác giả}
+\label{tab:fr-admin-users}
+\end{table}
+
+\subsubsection{Quản lý nội dung và danh mục}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-12.1 & Hệ thống phải cho phép quản trị viên xem toàn bộ truyện kể cả bản nháp và truyện bị ẩn, ẩn truyện vi phạm kèm lý do, hiện lại hoặc xoá truyện. & Quản trị viên \\ \hline
+FR-12.2 & Hệ thống phải cho phép quản trị viên xoá nhận xét vi phạm, và điểm đánh giá của truyện phải được cập nhật lại tương ứng. & Quản trị viên \\ \hline
+FR-12.3 & Hệ thống phải cho phép quản trị viên thêm, sửa, xoá thể loại và thẻ; chỉ được xoá thể loại chưa có truyện nào sử dụng. & Quản trị viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm quản lý nội dung và danh mục}
+\label{tab:fr-admin-content}
+\end{table}
+
+\subsubsection{Thống kê hệ thống}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|c|X|p{3cm}|}
+\hline
+\textbf{ID} & \textbf{Yêu cầu chức năng} & \textbf{Tác nhân} \\ \hline
+FR-13.1 & Hệ thống phải hiển thị số liệu tổng quan của toàn hệ thống, gồm số người dùng theo vai trò và trạng thái, số truyện theo trạng thái, tổng số chương, lượt xem và lượt đánh giá. & Quản trị viên \\ \hline
+FR-13.2 & Hệ thống phải hiển thị thống kê lượt xem theo thời gian, số truyện và lượt xem theo thể loại, người dùng mới theo tháng, và danh sách tác giả có tổng lượt xem cao hơn mức trung bình toàn hệ thống. & Quản trị viên \\ \hline
+\end{tabularx}
+\caption{Yêu cầu chức năng nhóm thống kê hệ thống}
+\label{tab:fr-admin-stats}
+\end{table}
 
 % ===================================================================
 \subsection{Phân tích và mô hình hóa dữ liệu}
