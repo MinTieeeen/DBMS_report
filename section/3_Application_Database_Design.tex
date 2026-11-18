@@ -253,10 +253,6 @@ Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như
 \end{figure}
 \end{landscape}
 
-% ===================================================================
-\subsection{Thiết kế cơ sở dữ liệu trên MS SQL Server (SQL)}
-\label{subsec:mssql-design}
-
 \subsubsection{Xây dựng lược đồ quan hệ (Relational Schema)}
 \label{subsubsec:relational-schema}
 
@@ -271,27 +267,639 @@ Lược đồ quan hệ của hệ thống được ánh xạ từ sơ đồ ERD
 \end{figure}
 \end{landscape}
 
+% ===================================================================
+\subsection{Thiết kế cơ sở dữ liệu trên MS SQL Server (SQL)}
+\label{subsec:mssql-design}
+
 \subsubsection{Thiết kế các bảng và thuộc tính}
-% TODO
+\label{subsubsec:table-design}
 
-\subsubsection{Xác định khóa chính và khóa ngoại}
-% TODO
+Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chia thành ba nhóm: người dùng, nội dung và hoạt động đọc. 
 
-\subsubsection{Xác định các ràng buộc dữ liệu}
-% TODO
+\paragraph{Nhóm người dùng}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{[User]}:} lưu tài khoản người dùng; vai trò quản trị viên được xác định qua cột \texttt{Role}.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{[User]}}\label{tab:db-user}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{UserId}} & \texttt{INT IDENTITY} & PK & Mã định danh tài khoản, tự tăng \\ \hline
+\texttt{Username} & \texttt{VARCHAR(50)} & NOT NULL, UNIQUE, CHECK & Tên đăng nhập, 3--50 ký tự gồm chữ thường, số và dấu gạch dưới \\ \hline
+\texttt{Email} & \texttt{VARCHAR(255)} & NOT NULL, UNIQUE & Địa chỉ email \\ \hline
+\texttt{PasswordHash} & \texttt{VARCHAR(100)} & NOT NULL & Mật khẩu đã băm bằng BCrypt \\ \hline
+\texttt{DisplayName} & \texttt{NVARCHAR(100)} & NOT NULL & Tên hiển thị \\ \hline
+\texttt{AvatarUrl} & \texttt{VARCHAR(500)} & -- & Đường dẫn ảnh đại diện \\ \hline
+\texttt{Bio} & \texttt{NVARCHAR(1000)} & -- & Giới thiệu bản thân \\ \hline
+\texttt{Role} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'READER' & Vai trò: READER, AUTHOR hoặc ADMIN \\ \hline
+\texttt{Status} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'ACTIVE' & Trạng thái: ACTIVE hoặc BANNED \\ \hline
+\texttt{BanReason} & \texttt{NVARCHAR(500)} & -- & Lý do bị khoá \\ \hline
+\texttt{BannedBy} & \texttt{INT} & FK $\rightarrow$ User & Quản trị viên đã khoá tài khoản \\ \hline
+\texttt{BannedAt} & \texttt{DATETIME2(3)} & -- & Thời điểm bị khoá \\ \hline
+\texttt{LastLoginAt} & \texttt{DATETIME2(3)} & -- & Thời điểm đăng nhập gần nhất \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm đăng ký \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm cập nhật gần nhất \\ \hline
+\texttt{RowVer} & \texttt{ROWVERSION} & NOT NULL & Phiên bản dòng, dùng phát hiện cập nhật đồng thời \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{AuthorRequest}:} lưu các yêu cầu trở thành tác giả do người đọc gửi và kết quả xét duyệt.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{AuthorRequest}}\label{tab:db-author-request}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{RequestId}} & \texttt{INT IDENTITY} & PK & Mã yêu cầu, tự tăng \\ \hline
+\texttt{UserId} & \texttt{INT} & NOT NULL, FK $\rightarrow$ User & Người gửi yêu cầu \\ \hline
+\texttt{ProposedPenName} & \texttt{NVARCHAR(100)} & NOT NULL & Bút danh đề xuất \\ \hline
+\texttt{Introduction} & \texttt{NVARCHAR(2000)} & NOT NULL & Lời giới thiệu, kế hoạch sáng tác \\ \hline
+\texttt{Status} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'PENDING' & Trạng thái: PENDING, APPROVED, REJECTED hoặc CANCELLED \\ \hline
+\texttt{ReviewedBy} & \texttt{INT} & FK $\rightarrow$ User, CHECK & Quản trị viên xét duyệt; bắt buộc khi yêu cầu đã được duyệt hoặc bị từ chối \\ \hline
+\texttt{ReviewedAt} & \texttt{DATETIME2(3)} & -- & Thời điểm xét duyệt \\ \hline
+\texttt{ReviewNote} & \texttt{NVARCHAR(500)} & -- & Ghi chú phản hồi của quản trị viên \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm gửi yêu cầu \\ \hline
+\texttt{RowVer} & \texttt{ROWVERSION} & NOT NULL & Phiên bản dòng, phát hiện hai quản trị viên cùng xử lý \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Author}:} lưu hồ sơ tác giả; đây là lớp con của \texttt{[User]} và dùng chung khoá chính với bảng đó.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Author}}\label{tab:db-author}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{UserId}} & \texttt{INT} & PK, FK $\rightarrow$ User & Tài khoản của tác giả \\ \hline
+\texttt{PenName} & \texttt{NVARCHAR(100)} & NOT NULL, UNIQUE & Bút danh \\ \hline
+\texttt{Bio} & \texttt{NVARCHAR(2000)} & -- & Giới thiệu tác giả \\ \hline
+\texttt{IsVerified} & \texttt{BIT} & NOT NULL, DEFAULT 0 & Dấu xác minh do quản trị viên cấp \\ \hline
+\texttt{ApprovedRequestId} & \texttt{INT} & NOT NULL, UNIQUE, FK $\rightarrow$ AuthorRequest & Yêu cầu đã được duyệt để tạo hồ sơ này \\ \hline
+\texttt{FollowerCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số người theo dõi (dẫn xuất) \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm trở thành tác giả \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{AuthorFollow}:} lưu quan hệ người dùng theo dõi tác giả.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{AuthorFollow}}\label{tab:db-author-follow}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{FollowerId}} & \texttt{INT} & PK, FK $\rightarrow$ User & Người theo dõi \\ \hline
+\underline{\texttt{AuthorId}} & \texttt{INT} & PK, FK $\rightarrow$ Author, CHECK & Tác giả được theo dõi; phải khác FollowerId \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm bắt đầu theo dõi \\ \hline
+\end{longtable}
+}
+
+
+\paragraph{Nhóm nội dung}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Genre}:} lưu danh mục thể loại truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Genre}}\label{tab:db-genre}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{GenreId}} & \texttt{SMALLINT IDENTITY} & PK & Mã thể loại, tự tăng \\ \hline
+\texttt{Name} & \texttt{NVARCHAR(50)} & NOT NULL, UNIQUE & Tên thể loại \\ \hline
+\texttt{Slug} & \texttt{VARCHAR(60)} & NOT NULL, UNIQUE & Chuỗi định danh dùng trên đường dẫn \\ \hline
+\texttt{Description} & \texttt{NVARCHAR(500)} & -- & Mô tả thể loại \\ \hline
+\texttt{SortOrder} & \texttt{SMALLINT} & NOT NULL, DEFAULT 0 & Thứ tự hiển thị \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Tag}:} lưu các thẻ do tác giả gắn cho truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Tag}}\label{tab:db-tag}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{TagId}} & \texttt{INT IDENTITY} & PK & Mã thẻ, tự tăng \\ \hline
+\texttt{Name} & \texttt{NVARCHAR(50)} & NOT NULL, UNIQUE & Tên thẻ \\ \hline
+\texttt{Slug} & \texttt{VARCHAR(60)} & NOT NULL, UNIQUE & Chuỗi định danh dùng trên đường dẫn \\ \hline
+\texttt{UsageCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số truyện đang dùng thẻ (dẫn xuất) \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Story}:} lưu thông tin truyện cùng các số liệu tổng hợp phục vụ hiển thị danh sách.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Story}}\label{tab:db-story}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{StoryId}} & \texttt{INT IDENTITY} & PK & Mã truyện, tự tăng \\ \hline
+\texttt{AuthorId} & \texttt{INT} & NOT NULL, FK $\rightarrow$ Author & Tác giả của truyện \\ \hline
+\texttt{Title} & \texttt{NVARCHAR(300)} & NOT NULL & Tên truyện \\ \hline
+\texttt{Slug} & \texttt{VARCHAR(350)} & NOT NULL, UNIQUE & Chuỗi định danh sinh từ tên truyện \\ \hline
+\texttt{Description} & \texttt{NVARCHAR(4000)} & -- & Phần giới thiệu \\ \hline
+\texttt{CoverUrl} & \texttt{VARCHAR(500)} & -- & Đường dẫn ảnh bìa \\ \hline
+\texttt{AgeRating} & \texttt{VARCHAR(5)} & NOT NULL, CHECK, DEFAULT 'ALL' & Giới hạn độ tuổi: ALL, 13+ hoặc 18+ \\ \hline
+\texttt{CompletionStatus} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'ONGOING' & Tình trạng: ONGOING, COMPLETED hoặc HIATUS \\ \hline
+\texttt{PublishStatus} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'DRAFT' & Trạng thái: DRAFT, PUBLISHED hoặc HIDDEN \\ \hline
+\texttt{HiddenReason} & \texttt{NVARCHAR(500)} & -- & Lý do quản trị viên ẩn truyện \\ \hline
+\texttt{ChapterCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số chương đã đăng (dẫn xuất) \\ \hline
+\texttt{WordCount} & \texttt{BIGINT} & NOT NULL, DEFAULT 0 & Tổng số chữ (dẫn xuất) \\ \hline
+\texttt{ViewCount} & \texttt{BIGINT} & NOT NULL, DEFAULT 0 & Tổng lượt xem (dẫn xuất) \\ \hline
+\texttt{FollowCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số lượt theo dõi (dẫn xuất) \\ \hline
+\texttt{RatingAvg} & \texttt{DECIMAL(3,2)} & NOT NULL, DEFAULT 0 & Điểm đánh giá trung bình (dẫn xuất) \\ \hline
+\texttt{RatingCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số lượt đánh giá (dẫn xuất) \\ \hline
+\texttt{LastChapterAt} & \texttt{DATETIME2(3)} & -- & Thời điểm đăng chương mới nhất (dẫn xuất) \\ \hline
+\texttt{PublishedAt} & \texttt{DATETIME2(3)} & -- & Thời điểm công khai lần đầu \\ \hline
+\texttt{IsDeleted} & \texttt{BIT} & NOT NULL, DEFAULT 0 & Cờ xoá mềm \\ \hline
+\texttt{DeletedAt} & \texttt{DATETIME2(3)} & -- & Thời điểm xoá \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm tạo \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm cập nhật gần nhất \\ \hline
+\texttt{RowVer} & \texttt{ROWVERSION} & NOT NULL & Phiên bản dòng \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{StoryGenre}:} lưu quan hệ nhiều--nhiều giữa truyện và thể loại.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{StoryGenre}}\label{tab:db-story-genre}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện \\ \hline
+\underline{\texttt{GenreId}} & \texttt{SMALLINT} & PK, FK $\rightarrow$ Genre & Thể loại \\ \hline
+\texttt{IsPrimary} & \texttt{BIT} & NOT NULL, DEFAULT 0 & Đánh dấu thể loại chính; mỗi truyện có tối đa một thể loại chính \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{StoryTag}:} lưu quan hệ nhiều--nhiều giữa truyện và thẻ.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{StoryTag}}\label{tab:db-story-tag}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện \\ \hline
+\underline{\texttt{TagId}} & \texttt{INT} & PK, FK $\rightarrow$ Tag & Thẻ \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Volume}:} lưu các tập của truyện (thực thể yếu của \texttt{Story}).
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Volume}}\label{tab:db-volume}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{VolumeId}} & \texttt{INT IDENTITY} & PK & Khoá thay thế, tự tăng \\ \hline
+\texttt{StoryId} & \texttt{INT} & NOT NULL, FK $\rightarrow$ Story, UNIQUE (StoryId, VolumeNo) & Truyện chứa tập \\ \hline
+\texttt{VolumeNo} & \texttt{SMALLINT} & NOT NULL & Số thứ tự tập trong truyện \\ \hline
+\texttt{Title} & \texttt{NVARCHAR(200)} & NOT NULL & Tên tập \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm tạo \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Chapter}:} lưu nội dung và trạng thái phát hành của từng chương (thực thể yếu của \texttt{Story}).
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Chapter}}\label{tab:db-chapter}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{ChapterId}} & \texttt{BIGINT IDENTITY} & PK & Khoá thay thế, tự tăng \\ \hline
+\texttt{StoryId} & \texttt{INT} & NOT NULL, FK $\rightarrow$ Story, UNIQUE (StoryId, ChapterNo) & Truyện chứa chương \\ \hline
+\texttt{VolumeId} & \texttt{INT} & FK $\rightarrow$ Volume & Tập chứa chương; NULL nếu truyện không chia tập \\ \hline
+\texttt{ChapterNo} & \texttt{INT} & NOT NULL, CHECK $>$ 0 & Số thứ tự chương trong truyện \\ \hline
+\texttt{Title} & \texttt{NVARCHAR(300)} & NOT NULL & Tên chương \\ \hline
+\texttt{Content} & \texttt{NVARCHAR(MAX)} & NOT NULL & Nội dung chương dạng HTML đã làm sạch \\ \hline
+\texttt{WordCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số chữ (dẫn xuất) \\ \hline
+\texttt{Status} & \texttt{VARCHAR(10)} & NOT NULL, CHECK, DEFAULT 'DRAFT' & Trạng thái: DRAFT, SCHEDULED hoặc PUBLISHED \\ \hline
+\texttt{ScheduledAt} & \texttt{DATETIME2(3)} & CHECK & Thời điểm hẹn đăng; bắt buộc khi trạng thái là SCHEDULED \\ \hline
+\texttt{PublishedAt} & \texttt{DATETIME2(3)} & CHECK & Thời điểm đăng; bắt buộc khi trạng thái là PUBLISHED \\ \hline
+\texttt{ViewCount} & \texttt{BIGINT} & NOT NULL, DEFAULT 0 & Lượt xem (dẫn xuất) \\ \hline
+\texttt{IsDeleted} & \texttt{BIT} & NOT NULL, DEFAULT 0 & Cờ xoá mềm \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm tạo \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm cập nhật gần nhất \\ \hline
+\texttt{RowVer} & \texttt{ROWVERSION} & NOT NULL & Phiên bản dòng \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{ChapterRevision}:} lưu lịch sử các phiên bản cũ của chương; dữ liệu chỉ được thêm, không được sửa hay xoá.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{ChapterRevision}}\label{tab:db-chapter-revision}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{RevisionId}} & \texttt{BIGINT IDENTITY} & PK & Khoá thay thế, tự tăng \\ \hline
+\texttt{ChapterId} & \texttt{BIGINT} & NOT NULL, FK $\rightarrow$ Chapter, UNIQUE (ChapterId, RevisionNo) & Chương được chỉnh sửa \\ \hline
+\texttt{RevisionNo} & \texttt{INT} & NOT NULL & Số thứ tự phiên bản trong chương \\ \hline
+\texttt{Title} & \texttt{NVARCHAR(300)} & NOT NULL & Tên chương tại phiên bản này \\ \hline
+\texttt{Content} & \texttt{NVARCHAR(MAX)} & NOT NULL & Nội dung chương tại phiên bản này \\ \hline
+\texttt{WordCount} & \texttt{INT} & NOT NULL & Số chữ tại phiên bản này \\ \hline
+\texttt{EditedBy} & \texttt{INT} & NOT NULL, FK $\rightarrow$ Author & Tác giả thực hiện chỉnh sửa \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm lưu phiên bản \\ \hline
+\end{longtable}
+}
+
+
+\paragraph{Nhóm hoạt động đọc}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{ReadingHistory}:} lưu vị trí đọc gần nhất của mỗi người dùng trong mỗi truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{ReadingHistory}}\label{tab:db-reading-history}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{UserId}} & \texttt{INT} & PK, FK $\rightarrow$ User & Người đọc \\ \hline
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện đang đọc \\ \hline
+\texttt{LastChapterId} & \texttt{BIGINT} & NOT NULL, FK $\rightarrow$ Chapter & Chương đọc gần nhất, phải thuộc đúng truyện \\ \hline
+\texttt{ScrollPercent} & \texttt{DECIMAL(5,2)} & NOT NULL, CHECK 0--100, DEFAULT 0 & Vị trí cuộn trong chương (\%) \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm đọc gần nhất \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Follow}:} lưu quan hệ người dùng theo dõi truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Follow}}\label{tab:db-follow}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{UserId}} & \texttt{INT} & PK, FK $\rightarrow$ User & Người theo dõi \\ \hline
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện được theo dõi \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm bắt đầu theo dõi \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{ReadingList}:} lưu các tủ truyện do người dùng tự tạo.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{ReadingList}}\label{tab:db-reading-list}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{ListId}} & \texttt{INT IDENTITY} & PK & Mã tủ truyện, tự tăng \\ \hline
+\texttt{UserId} & \texttt{INT} & NOT NULL, FK $\rightarrow$ User, UNIQUE (UserId, Name) & Chủ sở hữu tủ \\ \hline
+\texttt{Name} & \texttt{NVARCHAR(100)} & NOT NULL & Tên tủ, không trùng trong các tủ của cùng một người \\ \hline
+\texttt{Description} & \texttt{NVARCHAR(500)} & -- & Mô tả tủ \\ \hline
+\texttt{IsPublic} & \texttt{BIT} & NOT NULL, DEFAULT 0 & Tủ công khai hay riêng tư \\ \hline
+\texttt{ItemCount} & \texttt{INT} & NOT NULL, DEFAULT 0 & Số truyện trong tủ (dẫn xuất) \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm tạo \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm cập nhật gần nhất \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{ReadingListItem}:} lưu các truyện nằm trong mỗi tủ truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{ReadingListItem}}\label{tab:db-reading-list-item}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{ListId}} & \texttt{INT} & PK, FK $\rightarrow$ ReadingList & Tủ truyện \\ \hline
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện trong tủ \\ \hline
+\texttt{OrderNo} & \texttt{INT} & NOT NULL & Thứ tự của truyện trong tủ \\ \hline
+\texttt{Note} & \texttt{NVARCHAR(300)} & -- & Ghi chú của người dùng \\ \hline
+\texttt{AddedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm thêm vào tủ \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{Rating}:} lưu đánh giá và nhận xét của người dùng cho truyện; mỗi người có tối đa một đánh giá cho mỗi truyện.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{Rating}}\label{tab:db-rating}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{UserId}} & \texttt{INT} & PK, FK $\rightarrow$ User & Người đánh giá \\ \hline
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện được đánh giá \\ \hline
+\texttt{Score} & \texttt{TINYINT} & NOT NULL, CHECK 1--5 & Điểm đánh giá \\ \hline
+\texttt{Review} & \texttt{NVARCHAR(1000)} & -- & Nội dung nhận xét \\ \hline
+\texttt{CreatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm đánh giá \\ \hline
+\texttt{UpdatedAt} & \texttt{DATETIME2(3)} & NOT NULL, DEFAULT thời điểm tạo & Thời điểm sửa gần nhất \\ \hline
+\end{longtable}
+}
+
+\begin{itemize}
+    \item \textbf{Bảng \texttt{StoryViewDaily}:} lưu lượt xem của mỗi truyện theo từng ngày (thực thể yếu của \texttt{Story}).
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{2.7cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Mô tả bảng \texttt{StoryViewDaily}}\label{tab:db-story-view-daily}\\
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endfirsthead
+\hline
+\textbf{Thuộc tính} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Mô tả} \\ \hline
+\endhead
+\underline{\texttt{StoryId}} & \texttt{INT} & PK, FK $\rightarrow$ Story & Truyện \\ \hline
+\underline{\texttt{ViewDate}} & \texttt{DATE} & PK & Ngày thống kê theo giờ Việt Nam \\ \hline
+\texttt{Views} & \texttt{INT} & NOT NULL, CHECK $\geq$ 0, DEFAULT 0 & Số lượt xem trong ngày \\ \hline
+\end{longtable}
+}
 
 % ===================================================================
 \subsection{Thiết kế dữ liệu trên Redis (NoSQL)}
 \label{subsec:redis-design}
 
 \subsubsection{Chiến lược tổ chức dữ liệu}
-% TODO
+\label{subsubsec:redis-strategy}
+
+Trong Novelle, MS SQL Server là nơi lưu trữ chính (\emph{source of truth}) cho toàn bộ dữ liệu nghiệp vụ. Redis không thay thế SQL Server mà đóng vai trò lớp dữ liệu bổ trợ trong bộ nhớ, đảm nhận những loại dữ liệu cần truy xuất rất nhanh, thay đổi liên tục hoặc chỉ có giá trị trong một khoảng thời gian ngắn. Việc phân chia dữ liệu giữa hai hệ quản trị tuân theo các nguyên tắc sau:
+
+\begin{itemize}
+    \item \textbf{Dữ liệu bền vững nằm ở SQL Server:} tài khoản, truyện, chương, đánh giá, theo dõi, thống kê theo ngày,~\ldots{} luôn được ghi vào SQL Server. Redis chỉ giữ bản sao hoặc dữ liệu tạm, nên khi mất dữ liệu trên Redis, hệ thống vẫn khôi phục được trạng thái nghiệp vụ từ SQL Server.
+    \item \textbf{Mọi dữ liệu trên Redis đều có vòng đời rõ ràng:} mỗi loại dữ liệu có thời gian sống (TTL) riêng, hoặc được xoá ngay sau khi đã đồng bộ xuống SQL Server, để bộ nhớ không tăng mãi.
+    \item \textbf{Redis lỗi không làm hỏng chức năng đọc:} với dữ liệu đệm, khi Redis không phản hồi, ứng dụng bỏ qua lớp đệm và đọc trực tiếp từ SQL Server.
+\end{itemize}
+
+Dựa trên các nguyên tắc này, dữ liệu trên Redis được tổ chức thành sáu nhóm theo mục đích sử dụng:
+
+\begin{itemize}
+    \item \textbf{Bộ nhớ đệm (cache):} lưu kết quả của các truy vấn đọc nhiều như trang chủ, danh sách thể loại, chi tiết truyện, nội dung chương và số liệu thống kê. Dữ liệu được nạp theo cơ chế \emph{cache-aside}: đọc từ Redis trước, nếu chưa có thì truy vấn SQL Server rồi ghi lại vào Redis kèm TTL. Khi dữ liệu gốc thay đổi, khoá đệm tương ứng bị xoá để lần đọc sau lấy bản mới.
+    \item \textbf{Bộ đếm lượt xem:} mỗi lượt đọc chương chỉ tăng một bộ đếm trên Redis thay vì ghi trực tiếp vào SQL Server. Một tác vụ định kỳ (mỗi 60 giây) gom các bộ đếm và cộng dồn xuống SQL Server trong một giao dịch (\emph{write-behind}). Redis cũng ghi nhận người xem trong 30 phút để không tính trùng lượt khi người dùng tải lại trang.
+    \item \textbf{Bản nháp tự động lưu:} nội dung chương đang soạn được tự động lưu liên tục lên Redis với thời gian sống 7 ngày, và không ghi vào SQL Server. Bản nháp bị xoá khi tác giả lưu chương chính thức.
+    \item \textbf{Phiên đăng nhập:} thông tin phiên của người dùng được lưu trên Redis, giúp xác thực nhanh ở mỗi yêu cầu và cho phép huỷ phiên ngay khi tài khoản bị khoá.
+    \item \textbf{Giới hạn tần suất (rate limiting):} các bộ đếm theo cửa sổ thời gian giới hạn số lần thực hiện những thao tác nhạy cảm như đăng nhập, đăng ký, tìm kiếm, đánh giá hay gửi yêu cầu trở thành tác giả.
+    \item \textbf{Khoá phân tán:} khoá ngắn hạn (5 giây) dùng khi quản trị viên duyệt yêu cầu trở thành tác giả, để minh hoạ và so sánh cơ chế điều khiển tương tranh của Redis với cơ chế khoá dòng của SQL Server.
+\end{itemize}
+
+Bảng~\ref{tab:redis-strategy} tóm tắt cách mỗi nhóm dữ liệu liên hệ với SQL Server.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{3.2cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{3.2cm}|>{\raggedright\arraybackslash}p{2.6cm}|}
+\hline
+\textbf{Nhóm dữ liệu} & \textbf{Quan hệ với SQL Server} & \textbf{Thời gian sống} & \textbf{Khi mất dữ liệu} \\ \hline
+Bộ nhớ đệm & Bản sao chỉ đọc; xoá khi dữ liệu gốc thay đổi & 2 phút -- 1 giờ tuỳ loại & Nạp lại từ SQL Server \\ \hline
+Bộ đếm lượt xem & Ghi dồn xuống SQL Server mỗi 60 giây & Đến khi được đồng bộ & Mất tối đa 60 giây lượt xem \\ \hline
+Bản nháp tự động lưu & Chỉ có trên Redis & 7 ngày & Mất bản nháp chưa lưu \\ \hline
+Phiên đăng nhập & Không lưu ở SQL Server & 7 ngày không hoạt động & Người dùng đăng nhập lại \\ \hline
+Giới hạn tần suất & Không lưu ở SQL Server & Theo cửa sổ (1 phút -- 1 ngày) & Bộ đếm bắt đầu lại \\ \hline
+Khoá phân tán & Bảo vệ thao tác ghi trên SQL Server & 5 giây & Khoá tự hết hạn \\ \hline
+\end{tabularx}
+\caption{Tóm tắt chiến lược tổ chức dữ liệu trên Redis}
+\label{tab:redis-strategy}
+\end{table}
+
+Để hạn chế mất dữ liệu khi Redis khởi động lại, Redis được bật cơ chế lưu bền AOF với chế độ ghi đĩa mỗi giây (\texttt{appendfsync everysec}). Nhờ đó, phần dữ liệu có thể mất chỉ giới hạn trong khoảng một giây gần nhất, phù hợp với tính chất tạm thời của các nhóm dữ liệu trên.
 
 \subsubsection{Thiết kế Key Naming Convention}
-% TODO
+\label{subsubsec:redis-keys}
+
+Redis là kho key--value phẳng, không có khái niệm bảng hay lược đồ, nên cách đặt tên key đóng vai trò tổ chức dữ liệu. Mọi key trong Novelle tuân theo mẫu chung:
+
+\begin{center}
+\texttt{<nhóm>:<loại đối tượng>:<định danh>[:<thành phần phụ>]}
+\end{center}
+
+với các quy tắc sau:
+
+\begin{itemize}
+    \item \textbf{Tiền tố theo nhóm dữ liệu:} thành phần đầu tiên cho biết key thuộc nhóm nào trong sáu nhóm ở mục~\ref{subsubsec:redis-strategy}: \texttt{cache:} (bộ nhớ đệm), \texttt{views:} (lượt xem), \texttt{draft:} (bản nháp), \texttt{spring:session:} (phiên đăng nhập), \texttt{rl:} (giới hạn tần suất) và \texttt{lock:} (khoá phân tán). Nhờ đó có thể quét hoặc xoá cả một nhóm bằng mẫu \texttt{SCAN MATCH <nhóm>:*} mà không ảnh hưởng nhóm khác.
+    \item \textbf{Dấu hai chấm làm dấu phân cách}, các thành phần viết thường và dùng dấu gạch ngang khi có nhiều từ (ví dụ \texttt{author-request}).
+    \item \textbf{Định danh lấy từ khoá chính trên SQL Server} (\texttt{StoryId}, \texttt{ChapterId}, \texttt{UserId}, \ldots), nên từ một key có thể truy ngược ngay về dòng dữ liệu gốc.
+    \item \textbf{Thành phần phụ} dùng khi một đối tượng có nhiều key: ngày theo định dạng \texttt{yyyyMMdd} (giờ Việt Nam) cho bộ đếm lượt xem; người xem dạng \texttt{u\{userId\}} với người đã đăng nhập hoặc \texttt{ip\{địa chỉ\}} với khách.
+    \item \textbf{Tiền tố có thể cấu hình:} tiền tố \texttt{views:} được đổi thành \texttt{it:views:} khi chạy kiểm thử, để dữ liệu thử nghiệm không lẫn với dữ liệu thật.
+\end{itemize}
+
+Bảng~\ref{tab:redis-keys} liệt kê toàn bộ mẫu key được sử dụng.
+
+{\small
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{6.9cm}|>{\raggedright\arraybackslash}p{2.5cm}|>{\raggedright\arraybackslash}p{6.0cm}|}
+\caption{Danh sách mẫu key trên Redis}\label{tab:redis-keys}\\
+\hline
+\textbf{Mẫu key} & \textbf{Nhóm} & \textbf{Nội dung} \\ \hline
+\endfirsthead
+\hline
+\textbf{Mẫu key} & \textbf{Nhóm} & \textbf{Nội dung} \\ \hline
+\endhead
+\texttt{cache:home} & Bộ nhớ đệm & Dữ liệu trang chủ \\ \hline
+\texttt{cache:genre:list} & Bộ nhớ đệm & Danh sách thể loại \\ \hline
+\texttt{cache:story:\{storyId\}} & Bộ nhớ đệm & Chi tiết truyện kèm mục lục \\ \hline
+\texttt{cache:chapter:\{chapterId\}} & Bộ nhớ đệm & Nội dung chương đã đăng \\ \hline
+\texttt{cache:stats:\{name\}} & Bộ nhớ đệm & Số liệu thống kê của quản trị viên (\texttt{overview}, \texttt{views}, \texttt{genres}, \texttt{users}, \texttt{top-authors}) \\ \hline
+\texttt{views:story:\{storyId\}:\{yyyyMMdd\}} & Lượt xem & Số lượt xem truyện trong ngày, chưa đồng bộ \\ \hline
+\texttt{views:chapter:\{chapterId\}:\{yyyyMMdd\}} & Lượt xem & Số lượt xem chương trong ngày, chưa đồng bộ \\ \hline
+\texttt{views:dirty} & Lượt xem & Tập các bộ đếm đang chờ đồng bộ xuống SQL Server \\ \hline
+\texttt{views:seen:\{chapterId\}:\{viewer\}} & Lượt xem & Đánh dấu người xem đã được tính lượt trong 30 phút \\ \hline
+\texttt{draft:\{userId\}:\{chapterId\}} & Bản nháp & Bản nháp tự động lưu của một chương \\ \hline
+\texttt{spring:session:sessions:\{sessionId\}} & Phiên & Dữ liệu phiên đăng nhập \\ \hline
+\texttt{rl:\{thao tác\}:\{chủ thể\}} & Giới hạn tần suất & Số lần thực hiện thao tác trong cửa sổ hiện tại; chủ thể là \texttt{u\{userId\}} hoặc địa chỉ IP \\ \hline
+\texttt{lock:author-request:\{requestId\}} & Khoá phân tán & Khoá khi xét duyệt một yêu cầu trở thành tác giả \\ \hline
+\end{longtable}
+}
 
 \subsubsection{Lựa chọn cấu trúc dữ liệu Redis}
-% TODO
+\label{subsubsec:redis-structures}
+
+Với mỗi nhóm dữ liệu, cấu trúc dữ liệu được chọn dựa trên cách dữ liệu được đọc và ghi, để mỗi thao tác chỉ cần một lệnh Redis có độ phức tạp thấp:
+
+\begin{itemize}
+    \item \textbf{String chứa JSON} cho bộ nhớ đệm: kết quả truy vấn luôn được đọc và ghi nguyên khối, không cần sửa từng trường. Chuỗi JSON được đọc bằng một lệnh \texttt{GET} ($O(1)$) và chuyển thẳng thành đối tượng trả về cho giao diện; TTL được đặt ngay trong lệnh \texttt{SET \ldots{} EX}.
+    \item \textbf{String số nguyên} cho bộ đếm lượt xem và giới hạn tần suất: lệnh \texttt{INCR} tăng giá trị một cách nguyên tử, nên nhiều yêu cầu đồng thời không làm sai lệch bộ đếm mà không cần khoá.
+    \item \textbf{Set} cho \texttt{views:dirty}: tập hợp tự loại phần tử trùng, nên một bộ đếm được đánh dấu nhiều lần vẫn chỉ được đồng bộ một lần; lệnh \texttt{SPOP} lấy và xoá một lô phần tử trong cùng một thao tác.
+    \item \textbf{String với \texttt{SET NX}} cho dấu đã xem và khoá phân tán: tuỳ chọn \texttt{NX} chỉ ghi khi key chưa tồn tại, nên chỉ một bên ``thắng'' và key tự hết hạn theo \texttt{EX}/\texttt{PX}, không để lại khoá treo nếu tiến trình gặp sự cố.
+    \item \textbf{Hash} cho bản nháp và phiên đăng nhập: dữ liệu gồm nhiều trường (tiêu đề, nội dung, thời điểm lưu; các thuộc tính phiên). Hash cho phép ghi và đọc toàn bộ hoặc từng trường mà không phải tuần tự hoá lại cả đối tượng.
+\end{itemize}
+
+{\small
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{4.6cm}|>{\raggedright\arraybackslash}p{2.4cm}|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{5.4cm}|}
+\caption{Cấu trúc dữ liệu và thời gian sống của từng loại key}\label{tab:redis-structures}\\
+\hline
+\textbf{Key} & \textbf{Cấu trúc} & \textbf{TTL} & \textbf{Lệnh chính} \\ \hline
+\endfirsthead
+\hline
+\textbf{Key} & \textbf{Cấu trúc} & \textbf{TTL} & \textbf{Lệnh chính} \\ \hline
+\endhead
+\texttt{cache:home} & String (JSON) & 2 phút & \texttt{GET}, \texttt{SET EX}, \texttt{DEL} \\ \hline
+\texttt{cache:genre:list} & String (JSON) & 1 giờ & \texttt{GET}, \texttt{SET EX}, \texttt{DEL} \\ \hline
+\texttt{cache:story:*} & String (JSON) & 10 phút & \texttt{GET}, \texttt{SET EX}, \texttt{DEL} \\ \hline
+\texttt{cache:chapter:*} & String (JSON) & 30 phút & \texttt{GET}, \texttt{SET EX}, \texttt{DEL} \\ \hline
+\texttt{cache:stats:*} & String (JSON) & 5 phút & \texttt{GET}, \texttt{SET EX} \\ \hline
+\texttt{views:story:*}, \texttt{views:chapter:*} & String (số) & Không, xoá khi đồng bộ & \texttt{INCR}, \texttt{GETDEL}, \texttt{INCRBY} \\ \hline
+\texttt{views:dirty} & Set & Không & \texttt{SADD}, \texttt{SPOP} \\ \hline
+\texttt{views:seen:*} & String & 30 phút & \texttt{SET NX EX} \\ \hline
+\texttt{draft:*} & Hash & 7 ngày, làm mới mỗi lần lưu & \texttt{HSET}, \texttt{EXPIRE}, \texttt{HGETALL}, \texttt{DEL} \\ \hline
+\texttt{spring:session:*} & Hash & 7 ngày không hoạt động & Do Spring Session quản lý \\ \hline
+\texttt{rl:*} & String (số) & Bằng độ dài cửa sổ (1 phút -- 1 ngày) & \texttt{INCR}, \texttt{PEXPIRE}, \texttt{PTTL} \\ \hline
+\texttt{lock:author-request:*} & String (token) & 5 giây & \texttt{SET NX PX}, \texttt{GET} + \texttt{DEL} \\ \hline
+\end{longtable}
+}
 
 \subsubsection{Thiết kế cách lưu trữ và truy xuất dữ liệu}
-% TODO
+\label{subsubsec:redis-access}
+
+Phần này mô tả cách dữ liệu được ghi và đọc trên Redis trong từng luồng chính. Những thao tác cần nhiều lệnh liên tiếp được gộp vào một script Lua; Redis thực thi script như một thao tác nguyên tử, nên không có yêu cầu nào khác chen vào giữa.
+
+\paragraph{Bộ nhớ đệm theo cơ chế cache-aside.} Khi người dùng mở trang chi tiết truyện, ứng dụng đọc key đệm trước. Nếu có dữ liệu thì trả về ngay; nếu chưa có thì truy vấn SQL Server, rồi ghi kết quả lên Redis kèm TTL để các lần đọc sau dùng lại. Khi dữ liệu gốc thay đổi (tác giả sửa truyện, đăng chương, người dùng theo dõi hay đánh giá), ứng dụng xoá key đệm liên quan thay vì cập nhật nó, để tránh ghi đè bằng dữ liệu cũ:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+GET cache:story:42                       -- trúng đệm: trả về JSON
+                                         -- trượt đệm: truy vấn SQL Server, sau đó
+SET cache:story:42 "{...json...}" EX 600 -- lưu lại trong 10 phút
+DEL cache:story:42 cache:home            -- khi truyện 42 thay đổi
+\end{minted}
+
+\paragraph{Đếm và đồng bộ lượt xem.} Mỗi lần một chương được đọc, một script Lua thực hiện bốn bước nguyên tử: đặt dấu đã xem (chỉ thành công nếu người này chưa được tính trong 30 phút), tăng bộ đếm của truyện và của chương trong ngày, và thêm hai bộ đếm vào tập chờ đồng bộ:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+SET  views:seen:1001:u7 1 NX EX 1800     -- thất bại -> đã tính, dừng lại
+INCR views:story:42:20261118
+INCR views:chapter:1001:20261118
+SADD views:dirty S:42:20261118 C:1001:20261118
+\end{minted}
+
+Mỗi 60 giây, tác vụ đồng bộ dùng một script Lua khác để lấy ra một lô phần tử bằng \texttt{SPOP} và đọc-đồng-thời-xoá các bộ đếm tương ứng bằng \texttt{GETDEL}. Các giá trị này được gửi xuống thủ tục \texttt{sp\_FlushViews} để cộng vào \texttt{Story.ViewCount}, \texttt{Chapter.ViewCount} và \texttt{StoryViewDaily} trong một giao dịch. Lượt xem đến sau thời điểm lấy lô sẽ tạo bộ đếm mới, nên không lượt nào bị tính hai lần. Nếu giao dịch trên SQL Server thất bại, một script thứ ba cộng trả các giá trị vào bộ đếm (\texttt{INCRBY}) và thêm lại vào \texttt{views:dirty} để lần sau đồng bộ tiếp.
+
+\paragraph{Bản nháp tự động lưu.} Trong lúc tác giả soạn chương, giao diện định kỳ gửi nội dung lên và ứng dụng ghi đè toàn bộ hash bản nháp, đồng thời làm mới thời gian sống. Khi tác giả mở lại chương, ứng dụng đọc hash này và chỉ đề xuất khôi phục nếu bản nháp mới hơn bản đã lưu trên SQL Server. Bản nháp bị xoá khi chương được lưu chính thức hoặc bị xoá:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+HSET    draft:7:1001 title "Chương 5" content "<p>...</p>" savedAt 1763460000000
+EXPIRE  draft:7:1001 604800              -- 7 ngày
+HGETALL draft:7:1001                     -- khi mở lại trình soạn thảo
+DEL     draft:7:1001                     -- sau khi lưu chương thành công
+\end{minted}
+
+\paragraph{Giới hạn tần suất.} Mỗi thao tác được giới hạn dùng một bộ đếm theo cửa sổ cố định. Script Lua tăng bộ đếm, đặt thời gian hết hạn ở lần tăng đầu tiên và trả về thời gian còn lại của cửa sổ. Nếu giá trị vượt ngưỡng, yêu cầu bị từ chối và người dùng được báo thời điểm có thể thử lại:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+INCR    rl:login:203.0.113.5             -- trả về 1 ở lần đầu tiên
+PEXPIRE rl:login:203.0.113.5 60000       -- chỉ khi giá trị vừa bằng 1
+PTTL    rl:login:203.0.113.5             -- thời gian còn lại của cửa sổ
+\end{minted}
+
+\paragraph{Khoá phân tán khi duyệt yêu cầu tác giả.} Trước khi xử lý một yêu cầu, ứng dụng cố gắng đặt khoá với một chuỗi định danh ngẫu nhiên. Nếu khoá đã có người giữ, thao tác bị từ chối ngay. Khi xử lý xong, khoá chỉ được xoá nếu vẫn còn mang đúng chuỗi định danh đó, để không xoá nhầm khoá của người khác trong trường hợp khoá cũ đã hết hạn:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+SET lock:author-request:15 "<uuid>" NX PX 5000   -- nil -> đang có người duyệt
+-- ... gọi sp_ApproveAuthorRequest trên SQL Server ...
+if GET lock:author-request:15 == "<uuid>" then DEL lock:author-request:15   -- script Lua
+\end{minted}
