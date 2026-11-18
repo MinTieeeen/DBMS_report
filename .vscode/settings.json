@@ -1,45 +1,15 @@
 {
-  // Every generated file (aux, log, bbl, minted cache, PDF) goes to build/.
+  // latexmk -pdf -outdir=build main.tex  ->  build/main.pdf (options in .latexmkrc)
   "latex-workshop.latex.outDir": "%DIR%/build",
-
   "latex-workshop.latex.tools": [
-    {
-      // \include{section/...} writes build/section/*.aux; pdflatex does not create folders.
-      "name": "mkdir-build",
-      "command": "powershell",
-      "args": ["-NoProfile", "-Command", "New-Item -ItemType Directory -Force '%OUTDIR%/section' | Out-Null"]
-    },
-    {
-      "name": "pdflatex",
-      "command": "pdflatex",
-      "args": ["-shell-escape", "-synctex=1", "-interaction=nonstopmode", "-file-line-error", "-output-directory=%OUTDIR%", "%DOC%"],
-      // minted v3 reads the output folder from this variable.
-      "env": { "TEXMF_OUTPUT_DIRECTORY": "build" }
-    },
-    {
-      "name": "biber",
-      "command": "biber",
-      "args": ["--input-directory=%OUTDIR%", "--output-directory=%OUTDIR%", "%DOCFILE%"]
-    },
     {
       "name": "latexmk",
       "command": "latexmk",
-      "args": ["%DOC%"]
+      "args": ["-pdf", "-outdir=build", "%DOC%"]
     }
   ],
   "latex-workshop.latex.recipes": [
-    {
-      "name": "pdflatex -> biber -> pdflatex x2",
-      "tools": ["mkdir-build", "pdflatex", "biber", "pdflatex", "pdflatex"]
-    },
-    {
-      "name": "pdflatex",
-      "tools": ["mkdir-build", "pdflatex"]
-    },
-    {
-      "name": "latexmk (cần Perl)",
-      "tools": ["latexmk"]
-    }
+    { "name": "latexmk", "tools": ["latexmk"] }
   ],
   "latex-workshop.latex.recipe.default": "first",
   "latex-workshop.latex.rootFile.useSubFile": false,

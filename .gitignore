@@ -1,5 +1,5 @@
-# ---- Build output (aux, log, bbl, minted cache, PDF) ----
-build/
+# ---- Build output: only build/main.pdf is tracked ----
+build/*
 !build/main.pdf
 
 # Leftovers from building without -output-directory
