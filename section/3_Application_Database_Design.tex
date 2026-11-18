@@ -230,24 +230,28 @@ FR-13.2 & Hệ thống phải hiển thị thống kê lượt xem theo thời g
 \subsection{Phân tích và mô hình hóa dữ liệu}
 \label{subsec:data-modeling}
 
-\subsubsection{Xác định các thực thể dữ liệu}
-% TODO
-
-\subsubsection{Xác định thuộc tính của các thực thể}
-% TODO
-
-\subsubsection{Xác định mối quan hệ giữa các thực thể}
-% TODO
-
-\subsubsection{Xây dựng sơ đồ thực thể - liên kết (ERD)}
+\subsubsection{Thiết kế sơ đồ thực thể - liên kết (ERD)}
 \label{subsubsec:erd}
-% TODO: chèn sơ đồ ERD, ví dụ:
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=\textwidth]{image/chapter3/erd.png}
-%     \caption{Sơ đồ thực thể - liên kết của hệ thống}
-%     \label{fig:erd}
-% \end{figure}
+
+Từ các yêu cầu chức năng ở mục~\ref{subsec:functional-requirements}, dữ liệu của Novelle được tổ chức thành bốn nhóm chính:
+
+\begin{itemize}
+    \item \textbf{Người dùng và vai trò:} mỗi tài khoản (\texttt{USER}) có tên đăng nhập, email, thông tin hồ sơ, vai trò và trạng thái hoạt động. Tài khoản được chuyên biệt hoá thành hai lớp con rời nhau theo thuộc tính vai trò: \texttt{AUTHOR} mang thêm bút danh, phần giới thiệu và dấu xác minh; \texttt{ADMIN} không có thuộc tính riêng nhưng là bên duy nhất được duyệt các yêu cầu trở thành tác giả (\texttt{AUTHOR\_REQUEST}). Người đọc thông thường không thuộc lớp con nào.
+    \item \textbf{Nội dung truyện:} mỗi truyện (\texttt{STORY}) thuộc về đúng một tác giả, được phân loại vào một đến ba thể loại (\texttt{GENRE}) và gắn các thẻ (\texttt{TAG}) tự do. Truyện gồm nhiều chương (\texttt{CHAPTER}), có thể được nhóm theo tập (\texttt{VOLUME}); mỗi lần chương được chỉnh sửa, phiên bản cũ được lưu thành một bản sửa (\texttt{CHAPTER\_REVISION}). Tập, chương và bản sửa không có định danh riêng mà chỉ có ý nghĩa bên trong truyện hoặc chương chứa nó, nên được mô hình hoá là thực thể yếu.
+    \item \textbf{Hoạt động đọc:} người dùng có thể theo dõi truyện (\texttt{FOLLOWS}), theo dõi tác giả (\texttt{FOLLOWS\_AUTHOR}), đánh giá truyện kèm điểm và nhận xét (\texttt{RATES}), lưu vị trí đọc gần nhất (\texttt{LAST\_READ}) và sắp xếp truyện vào các tủ truyện cá nhân (\texttt{READING\_LIST}). Các thông tin như thời điểm theo dõi, điểm đánh giá hay vị trí cuộn trang thuộc về chính mối liên kết nên được đặt trên các mối quan hệ nhiều--nhiều tương ứng.
+    \item \textbf{Thống kê lượt xem:} lượt xem của mỗi truyện được tổng hợp theo từng ngày (\texttt{STORY\_VIEW\_DAILY}) để phục vụ biểu đồ thống kê của tác giả và quản trị viên.
+\end{itemize}
+
+Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như số chương, số chữ, lượt xem, lượt theo dõi và điểm trung bình của truyện là \textbf{thuộc tính dẫn xuất}, vì có thể tính lại từ các thực thể và quan hệ liên quan. Sơ đồ ERD của hệ thống được trình bày ở Hình~\ref{fig:erd}
+
+\begin{landscape}
+\begin{figure}[p]
+    \centering
+    \includegraphics[width=\linewidth,height=0.9\textheight,keepaspectratio]{image/chapter3/erd.png}
+    \caption{Sơ đồ thực thể - liên kết (ERD) của hệ thống Novelle}
+    \label{fig:erd}
+\end{figure}
+\end{landscape}
 
 % ===================================================================
 \subsection{Thiết kế cơ sở dữ liệu trên MS SQL Server (SQL)}

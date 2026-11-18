@@ -34,29 +34,38 @@ Mở **thư mục `DBMS_report`** làm workspace để VS Code nhận cấu hìn
 
 ## 2. Cách build
 
+Mọi file sinh ra khi build (`*.aux`, `*.log`, `*.bbl`, cache của `minted`, ...) và **file PDF** đều nằm trong thư mục **`build/`**. Thư mục gốc chỉ chứa mã nguồn. Kết quả cuối cùng là **`build/main.pdf`**.
+
 ### 2.1. Bằng VS Code (khuyến nghị)
 
 1. Mở `main.tex`.
 2. Nhấn **Ctrl+Alt+B** (hoặc biểu tượng TeX ở thanh bên → *Build LaTeX project*).
-3. Xem PDF bằng **Ctrl+Alt+V**.
+3. Xem PDF bằng **Ctrl+Alt+V** (LaTeX Workshop tự mở `build/main.pdf`).
 
-Recipe mặc định là `pdflatex -> biber -> pdflatex x2` (đã bật `-shell-escape` cho `minted`). Recipe này không cần Perl. Nếu máy có Perl, có thể chọn recipe `latexmk`.
+Các recipe (cấu hình trong `.vscode/settings.json`):
 
-> Khi đang mở một file trong `section/`, LaTeX Workshop thường tự nhận `main.tex` là file gốc. Nếu nó build nhầm file con, hãy mở `main.tex` rồi build.
+| Recipe | Khi nào dùng |
+|---|---|
+| `pdflatex -> biber -> pdflatex x2` (mặc định) | Build đầy đủ: mục lục, tham chiếu chéo, tài liệu tham khảo |
+| `pdflatex (nhanh, 1 lần)` | Chỉ sửa chữ, không thêm `\cite`, `\label` hay mục mới |
+| `latexmk (cần Perl)` | Máy đã cài Perl |
 
 ### 2.2. Bằng dòng lệnh
 
 ```powershell
 cd DBMS_report
-pdflatex -shell-escape -interaction=nonstopmode main.tex
-biber main
-pdflatex -shell-escape -interaction=nonstopmode main.tex
-pdflatex -shell-escape -interaction=nonstopmode main.tex
+.\build.ps1          # build đầy đủ  -> build/main.pdf
+.\build.ps1 quick    # 1 lần pdflatex
+.\build.ps1 clean    # xoá thư mục build/
 ```
 
-Hoặc, nếu có Perl: `latexmk` (cấu hình nằm trong `.latexmkrc`).
+Hoặc, nếu có Perl: `latexmk` (cấu hình trong `.latexmkrc`, cũng xuất ra `build/`).
 
-Kết quả là `main.pdf`. File PDF và các file trung gian (`*.aux`, `*.log`, `*.bbl`, ...) **không được commit** (xem `.gitignore`).
+Script làm 2 việc mà lệnh `pdflatex -output-directory=build` không tự làm:
+- tạo sẵn `build/section/`, vì mỗi `\include{section/...}` ghi file `.aux` vào đó;
+- đặt biến môi trường `TEXMF_OUTPUT_DIRECTORY=build`, vì `minted` v3 cần biến này để tìm thư mục output.
+
+Thư mục `build/` **không được commit** (xem `.gitignore`).
 
 ### 2.3. Lỗi thường gặp
 
@@ -67,6 +76,9 @@ Kết quả là `main.pdf`. File PDF và các file trung gian (`*.aux`, `*.log`,
 | `Package minted Error: You must invoke LaTeX with the -shell-escape flag` | Build thiếu cờ `-shell-escape` |
 | `Package minted Error: You must have 'pygmentize' installed` | Cài Python + `pip install Pygments` |
 | Tài liệu tham khảo hiện `[?]` hoặc không xuất hiện | Chưa chạy `biber`, hãy build lại đủ chuỗi |
+| `minted v3 Python executable could not find output directory` | Build `-output-directory=build` mà thiếu biến `TEXMF_OUTPUT_DIRECTORY=build` → dùng `build.ps1` hoặc recipe có sẵn |
+| `I can't write on file 'section/....aux'` | Thiếu thư mục `build/section/` → dùng `build.ps1` hoặc recipe có sẵn |
+| Còn file `.aux`, `.log`, `main.pdf` ở thư mục gốc | Do build theo cách cũ; xoá đi, chúng đã bị `.gitignore` bỏ qua |
 | Mục lục hoặc tham chiếu chéo hiện `??` | Build thêm một lần nữa |
 
 ## 3. Cấu trúc thư mục
@@ -95,8 +107,10 @@ DBMS_report/
 │   ├── chapter3/                # Ảnh của chương 3 (ERD, lược đồ, ...)
 │   ├── chapter4/                # Ảnh thực nghiệm chương 4
 │   └── chapter5/                # Ảnh kiến trúc, ảnh chụp màn hình ứng dụng
-├── .vscode/settings.json        # Recipe build cho LaTeX Workshop
-├── .latexmkrc                   # Cấu hình latexmk (tùy chọn)
+├── build/                       # Mọi file sinh ra + main.pdf (không commit)
+├── build.ps1                    # Script build (full / quick / clean)
+├── .vscode/settings.json        # Recipe build cho LaTeX Workshop (xuất ra build/)
+├── .latexmkrc                   # Cấu hình latexmk (tùy chọn, xuất ra build/)
 └── .gitignore
 ```
 

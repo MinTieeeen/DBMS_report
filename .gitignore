@@ -1,4 +1,8 @@
-# ---- LaTeX build artifacts ----
+# ---- Build output (aux, log, bbl, minted cache, PDF) ----
+build/
+!build/main.pdf
+
+# Leftovers from building without -output-directory
 *.aux
 *.bbl
 *.bcf
@@ -13,19 +17,10 @@
 *.synctex(busy)
 *.fls
 *.fdb_latexmk
-*.xdv
 *.hst
 *.ver
-*.nav
-*.snm
-*.vrb
-
-# minted (pygments) cache
 _minted*/
-*.pyg
-
-# Output PDF
-main.pdf
+/main.pdf
 
 # ---- Editors / OS ----
 .vscode/*
