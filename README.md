@@ -77,7 +77,6 @@ DBMS_report/
 │   │   ├── 4_1_Data_Storage.tex             # 4.1 Quản lý và lưu trữ dữ liệu
 │   │   ├── 4_2_Query_Processing.tex         # 4.2 Xử lý truy vấn
 │   │   ├── 4_3_Transaction.tex              # 4.3 Giao dịch
-│   │   ├── 4_4_Concurrency_Control.tex      # 4.4 Kiểm soát đồng thời
 │   │   ├── 4_5_Backup_Recovery.tex          # 4.5 Sao lưu và phục hồi
 │   │   └── 4_6_Summary.tex                  # 4.6 Tổng hợp (hiện chưa được \input trong 4_DBMS_Topics.tex)
 │   ├── 5_Architecture_Implementation.tex    # Chương 5. Thiết kế kiến trúc và triển khai ứng dụng
