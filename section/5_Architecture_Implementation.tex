@@ -2,13 +2,161 @@
 \label{sec:architecture-implementation}
 
 \subsection{Tổng quan công nghệ sử dụng}
-% TODO
+\label{subsec:tech-stack}
+
+Novelle được xây dựng theo mô hình client--server gồm ba phần: ứng dụng web phía client, dịch vụ backend cung cấp REST API, và tầng dữ liệu gồm hai hệ quản trị cơ sở dữ liệu. Bảng~\ref{tab:tech-stack} liệt kê các công nghệ cốt lõi của từng phần.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Vai trò} \\ \hline
+\multirow{4}{=}{Frontend}
+ & React 19 & Thư viện xây dựng giao diện theo mô hình component, ứng dụng dạng SPA \\ \cline{2-3}
+ & TypeScript & Ngôn ngữ lập trình có kiểu tĩnh cho toàn bộ mã nguồn phía client \\ \cline{2-3}
+ & Vite & Công cụ chạy môi trường phát triển và đóng gói ứng dụng \\ \cline{2-3}
+ & Tailwind CSS & Định dạng giao diện bằng các lớp tiện ích \\ \hline
+\multirow{4}{=}{Backend}
+ & Java 21 & Ngôn ngữ lập trình phía server \\ \cline{2-3}
+ & Spring Boot 3.5 & Framework xây dựng REST API, gồm Spring Web, Spring Security (xác thực, phân quyền) và Spring Session (lưu phiên đăng nhập trên Redis) \\ \cline{2-3}
+ & MyBatis & Ánh xạ câu lệnh SQL viết tay sang đối tượng Java, cho phép kiểm soát trực tiếp truy vấn gửi tới SQL Server \\ \cline{2-3}
+ & Spring Data Redis & Thư viện truy cập Redis, dùng cho bộ nhớ đệm, bộ đếm lượt xem, bản nháp, giới hạn tần suất và khoá phân tán \\ \hline
+\multirow{2}{=}{Cơ sở dữ liệu}
+ & Microsoft SQL Server 2019 & Hệ quản trị cơ sở dữ liệu quan hệ, lưu trữ chính cho toàn bộ dữ liệu nghiệp vụ \\ \cline{2-3}
+ & Redis Stack 7.4 & Kho dữ liệu key--value trong bộ nhớ, bổ trợ cho các dữ liệu cần truy xuất nhanh hoặc tạm thời \\ \hline
+\end{tabularx}
+\caption{Các công nghệ cốt lõi của hệ thống Novelle}
+\label{tab:tech-stack}
+\end{table}
 
 \subsection{Thiết kế kiến trúc hệ thống}
-% TODO
+\label{subsec:architecture}
 
-\subsection{Thiết kế cơ chế tích hợp hai DBMS}
-% TODO
+\subsubsection{Kiến trúc tổng thể}
+\label{subsubsec:architecture-overview}
+
+Novelle được thiết kế theo kiến trúc client--server nhiều tầng (\emph{n-tier}). Người dùng thao tác trên ứng dụng web chạy trong trình duyệt; ứng dụng này giao tiếp với backend qua REST API dùng định dạng JSON; backend xử lý nghiệp vụ và làm việc với hai hệ quản trị cơ sở dữ liệu là MS SQL Server và Redis. Hình~\ref{fig:component-diagram} mô tả các thành phần chính của hệ thống và cách chúng giao tiếp với nhau.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/component-diagram.png}
+    \caption{Sơ đồ thành phần (component diagram) của hệ thống Novelle}
+    \label{fig:component-diagram}
+\end{figure}
+
+\paragraph{Frontend.} Ứng dụng web được xây dựng dưới dạng SPA (\emph{Single Page Application}): trình duyệt chỉ tải ứng dụng một lần, sau đó mọi thao tác đều được xử lý phía client và chỉ gọi backend để lấy hoặc gửi dữ liệu. Frontend gồm ba thành phần:
+\begin{itemize}
+    \item \textbf{UI Pages \& Components:} các trang và thành phần giao diện cho người đọc, khu vực sáng tác và khu vực quản trị.
+    \item \textbf{Server State (TanStack Query):} quản lý dữ liệu lấy từ server, lưu tạm kết quả và tự làm mới khi dữ liệu thay đổi.
+    \item \textbf{API Client (Axios):} nơi duy nhất gửi yêu cầu HTTP tới backend, kèm cookie phiên đăng nhập và mã chống CSRF.
+\end{itemize}
+
+\paragraph{Backend.} Backend là một ứng dụng Spring Boot, được tổ chức theo các lớp rõ ràng; mỗi yêu cầu đi lần lượt qua từng lớp:
+\begin{itemize}
+    \item \textbf{Security Filter Chain:} kiểm tra phiên đăng nhập, trạng thái tài khoản và quyền truy cập theo vai trò trước khi yêu cầu tới được lớp xử lý.
+    \item \textbf{REST Controllers:} tiếp nhận yêu cầu, kiểm tra dữ liệu đầu vào và trả kết quả dạng JSON.
+    \item \textbf{Services:} chứa logic nghiệp vụ và quản lý giao dịch; quyết định dữ liệu nào đọc từ Redis, dữ liệu nào đọc hoặc ghi xuống SQL Server.
+    \item \textbf{MyBatis Mappers:} thực thi các câu lệnh SQL, thủ tục lưu trữ trên SQL Server và ánh xạ kết quả sang đối tượng Java.
+    \item \textbf{Redis Infrastructure:} tập hợp các thành phần làm việc với Redis gồm bộ nhớ đệm, lưu phiên đăng nhập, bộ đếm lượt xem, bản nháp, giới hạn tần suất và khoá phân tán.
+    \item \textbf{Scheduled Jobs:} các tác vụ chạy định kỳ, như đồng bộ lượt xem từ Redis xuống SQL Server và tự động đăng các chương đã hẹn giờ.
+\end{itemize}
+
+\paragraph{Tầng dữ liệu.} Hai hệ quản trị cơ sở dữ liệu được dùng với vai trò khác nhau:
+\begin{itemize}
+    \item \textbf{MS SQL Server} là nơi lưu trữ chính cho toàn bộ dữ liệu nghiệp vụ; các ràng buộc toàn vẹn, giao dịch, trigger và thủ tục lưu trữ đều nằm ở đây.
+    \item \textbf{Redis} là lớp dữ liệu bổ trợ trong bộ nhớ, giữ những dữ liệu cần truy xuất nhanh hoặc chỉ có giá trị tạm thời. Mất dữ liệu trên Redis không làm hỏng dữ liệu nghiệp vụ trên SQL Server.
+\end{itemize}
+
+\paragraph{Luồng xử lý một yêu cầu.} Khi người dùng mở trang chi tiết một truyện, giao diện gửi yêu cầu qua API Client tới backend. Security Filter Chain xác định người dùng từ phiên lưu trên Redis, sau đó Controller chuyển yêu cầu cho Service tương ứng. Service tìm dữ liệu trong bộ nhớ đệm trên Redis trước; nếu chưa có, Service gọi Mapper truy vấn SQL Server, rồi lưu kết quả vào Redis cho các lần đọc sau. Với các thao tác ghi như đánh giá hay đăng chương, Service ghi xuống SQL Server trong một giao dịch, sau đó xoá các khoá đệm liên quan trên Redis để dữ liệu hiển thị luôn được cập nhật.
+
+\subsubsection{Sơ đồ gói (Package diagram)}
+\label{subsubsec:package-diagram}
+
+Mã nguồn của Novelle được tổ chức thành hai dự án: \texttt{novelle\_frontend} và \texttt{novelle\_backend}. Mỗi dự án được chia thành các gói (package) theo lớp kỹ thuật; quan hệ phụ thuộc giữa các gói được thể hiện ở Hình~\ref{fig:package-diagram}, trong đó mũi tên nét đứt đi từ gói sử dụng tới gói được sử dụng.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/package-diagram.png}
+    \caption{Sơ đồ gói của hệ thống Novelle}
+    \label{fig:package-diagram}
+\end{figure}
+
+\paragraph{Các gói của frontend.}
+\begin{itemize}
+    \item \texttt{app}: điểm khởi tạo ứng dụng, khai báo bộ định tuyến (router) và các provider dùng chung.
+    \item \texttt{pages}: các trang ứng với từng đường dẫn, chia theo khu vực người đọc, tài khoản, khu vực sáng tác và khu vực quản trị.
+    \item \texttt{components}: các thành phần giao diện tái sử dụng, nhóm theo chức năng (truyện, đọc chương, thư viện, sáng tác, quản trị) và bộ thành phần giao diện cơ bản.
+    \item \texttt{layouts}: khung bố cục chung của từng khu vực (thanh điều hướng, thanh bên, chân trang).
+    \item \texttt{hooks}: các hook React đóng gói việc gọi API, quản lý trạng thái và xử lý thao tác của người dùng.
+    \item \texttt{api}: các hàm gọi REST API của backend, nhóm theo module nghiệp vụ, dùng chung một HTTP client.
+    \item \texttt{auth}: quản lý trạng thái đăng nhập và chặn truy cập các trang theo vai trò.
+    \item \texttt{types}, \texttt{lib}, \texttt{utils}: kiểu dữ liệu TypeScript dùng chung và các hàm tiện ích.
+\end{itemize}
+
+\paragraph{Các gói của backend.}
+\begin{itemize}
+    \item \texttt{controller}: các REST controller nhận yêu cầu và trả kết quả JSON.
+    \item \texttt{service}: logic nghiệp vụ và quản lý giao dịch.
+    \item \texttt{mapper}: các MyBatis mapper chứa câu lệnh SQL và lời gọi thủ tục lưu trữ trên SQL Server.
+    \item \texttt{model}: các đối tượng nhận kết quả truy vấn từ cơ sở dữ liệu.
+    \item \texttt{dto}: các đối tượng dữ liệu vào/ra của API kèm quy tắc kiểm tra hợp lệ.
+    \item \texttt{exception}: mã lỗi, ngoại lệ và bộ xử lý lỗi tập trung.
+    \item \texttt{config}: cấu hình bảo mật, CORS, lịch chạy tác vụ và tài liệu API.
+    \item \texttt{infrastructure}: các thành phần hạ tầng dùng chung, gồm \texttt{security} (phiên đăng nhập, kiểm tra trạng thái tài khoản), \texttt{ratelimit} (giới hạn tần suất), \texttt{cache} (bộ nhớ đệm, bản nháp, khoá phân tán trên Redis), \texttt{views} (đếm và đồng bộ lượt xem), \texttt{jobs} (tác vụ đăng chương hẹn giờ), \texttt{html} (làm sạch HTML, đếm chữ, sinh slug) và \texttt{mybatis} (bộ chuyển đổi kiểu dữ liệu đặc thù của SQL Server).
+\end{itemize}
+
+Các gói phụ thuộc một chiều theo lớp: \texttt{controller} $\rightarrow$ \texttt{service} $\rightarrow$ \texttt{mapper} $\rightarrow$ \texttt{model}. Gói \texttt{api} của frontend là nơi duy nhất giao tiếp với backend, thông qua các endpoint do \texttt{controller} cung cấp.
+
+% ===================================================================
+\subsection{Thiết kế các thành phần hệ thống}
+\label{subsec:system-components}
+
+Nếu sơ đồ gói chia hệ thống theo lớp kỹ thuật, thì theo chiều nghiệp vụ, Novelle được phân rã thành tám module. Mỗi module phục vụ một nhóm chức năng, có phần giao diện riêng ở frontend, nhóm endpoint riêng ở backend và làm việc với một tập bảng xác định. Bảng~\ref{tab:system-modules} tóm tắt các module; trách nhiệm chi tiết của từng module được trình bày ngay sau đó.
+
+{\small
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{1.9cm}|>{\raggedright\arraybackslash}p{5.2cm}|>{\raggedright\arraybackslash}p{5.2cm}|}
+\caption{Các module nghiệp vụ của hệ thống Novelle}\label{tab:system-modules}\\
+\hline
+\textbf{Module} & \textbf{Chức năng} & \textbf{Nhóm endpoint} & \textbf{Dữ liệu chính} \\ \hline
+\endfirsthead
+\hline
+\textbf{Module} & \textbf{Chức năng} & \textbf{Nhóm endpoint} & \textbf{Dữ liệu chính} \\ \hline
+\endhead
+Nền tảng & -- & -- & Phiên đăng nhập, bộ đếm giới hạn tần suất (Redis) \\ \hline
+Tài khoản & Đăng ký, đăng nhập, hồ sơ & \texttt{/api/auth}, \texttt{/api/me}, \texttt{/api/users} & \texttt{User}, \texttt{Author} \\ \hline
+Danh mục \& truyện & F1, F2, F3 & \texttt{/api/home}, \texttt{/api/genres}, \texttt{/api/tags}, \texttt{/api/stories}, \texttt{/api/authors} & \texttt{Story}, \texttt{Genre}, \texttt{Tag}, \texttt{Volume}, \texttt{Chapter}, \texttt{Author} \\ \hline
+Đọc truyện & F4 & \texttt{/api/chapters}, \texttt{/api/reading-progress} & \texttt{Chapter}, \texttt{ReadingHistory}, \texttt{StoryViewDaily} \\ \hline
+Thư viện \& đánh giá & F5, F6 & \texttt{/api/library}, \texttt{/api/reading-lists}, \texttt{.../follow}, \texttt{.../ratings} & \texttt{Follow}, \texttt{AuthorFollow}, \texttt{ReadingList}, \texttt{ReadingListItem}, \texttt{Rating} \\ \hline
+Yêu cầu tác giả & F7, F11 & \texttt{/api/author-requests}, \texttt{/api/admin/author-requests} & \texttt{AuthorRequest}, \texttt{Author}, \texttt{User} \\ \hline
+Studio sáng tác & F8, F9, F10 & \texttt{/api/studio/**} & \texttt{Story}, \texttt{Volume}, \texttt{Chapter}, \texttt{ChapterRevision}, \texttt{StoryViewDaily} \\ \hline
+Quản trị & F11, F12, F13 & \texttt{/api/admin/**} & Tất cả các bảng \\ \hline
+\end{longtable}
+}
+
+\paragraph{Module Nền tảng.} Cung cấp các cơ chế dùng chung cho mọi module khác: lưu phiên đăng nhập trên Redis, kiểm tra trạng thái tài khoản ở mỗi yêu cầu, phân quyền theo vai trò, giới hạn tần suất các thao tác nhạy cảm, mô hình lỗi thống nhất cho toàn bộ API và bộ nhớ đệm dùng chung. Ở frontend, module này gồm HTTP client, cơ chế lưu trữ trạng thái dữ liệu từ server và bộ chặn truy cập theo vai trò.
+
+\paragraph{Module Tài khoản.} Chịu trách nhiệm đăng ký tài khoản (mặc định là người đọc), đăng nhập bằng tên đăng nhập hoặc email, đăng xuất, xem và sửa hồ sơ cá nhân, đổi mật khẩu và hiển thị hồ sơ công khai. Mật khẩu được băm bằng BCrypt; việc sửa hồ sơ dùng khoá lạc quan để phát hiện chỉnh sửa đồng thời. Khi vai trò của người dùng thay đổi (được duyệt làm tác giả) hoặc tài khoản bị khoá, thay đổi có hiệu lực ngay ở yêu cầu kế tiếp.
+
+\paragraph{Module Danh mục \& truyện.} Phục vụ toàn bộ phần đọc công khai: trang chủ với các danh sách truyện, danh sách thể loại và gợi ý thẻ, tìm kiếm toàn văn kết hợp bộ lọc nhiều điều kiện, trang chi tiết truyện kèm mục lục theo tập, và trang tác giả. Module này chỉ đọc dữ liệu, luôn ẩn truyện chưa công khai và chương chưa đăng, và dùng bộ nhớ đệm Redis cho trang chủ, danh sách thể loại và chi tiết truyện.
+
+\paragraph{Module Đọc truyện.} Trả nội dung chương cùng liên kết chương trước và chương sau, ghi nhận lượt xem và lưu vị trí đọc của người dùng. Lượt xem được đếm trên Redis, chống tính trùng trong 30 phút, rồi được tác vụ định kỳ đồng bộ xuống SQL Server mỗi 60 giây. Nội dung chương đã đăng được lưu đệm trên Redis.
+
+\paragraph{Module Thư viện \& đánh giá.} Quản lý các hoạt động cá nhân của người đọc: lịch sử đọc, theo dõi truyện và tác giả, tủ truyện (tạo, sửa, xoá, thêm truyện, sắp xếp thứ tự) và đánh giá truyện. Các số liệu tổng hợp như lượt theo dõi và điểm trung bình được trigger trên SQL Server cập nhật; sau mỗi thao tác ghi, module xoá bộ nhớ đệm của truyện liên quan.
+
+\paragraph{Module Yêu cầu tác giả.} Cho phép người đọc gửi, theo dõi và huỷ yêu cầu trở thành tác giả, và cho phép quản trị viên xem hàng đợi, duyệt hoặc từ chối yêu cầu. Việc duyệt được thực hiện trong một thủ tục lưu trữ: đổi trạng thái yêu cầu, đổi vai trò tài khoản và tạo hồ sơ tác giả trong cùng một giao dịch, đồng thời bảo đảm mỗi yêu cầu chỉ được xử lý một lần kể cả khi hai quản trị viên thao tác cùng lúc.
+
+\paragraph{Module Studio sáng tác.} Khu vực làm việc của tác giả, gồm ba phần:
+\begin{itemize}
+    \item \textbf{Quản lý truyện:} tạo, sửa, công khai, chuyển về bản nháp, xoá truyện; gán thể loại, thẻ; cập nhật hồ sơ tác giả.
+    \item \textbf{Viết chương:} quản lý tập và chương, tự động lưu bản nháp lên Redis, lưu chương với khoá lạc quan, đăng ngay hoặc hẹn giờ đăng, xem và khôi phục các phiên bản cũ.
+    \item \textbf{Thống kê tác giả:} số liệu tổng quan, lượt xem theo ngày hoặc tháng, thống kê từng truyện và người theo dõi.
+\end{itemize}
+Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập.
+
+\paragraph{Module Quản trị.} Dành cho quản trị viên, gồm quản lý người dùng (tìm kiếm, khoá, mở khoá, tạo quản trị viên, cấp dấu xác minh), kiểm duyệt nội dung (ẩn, hiện, xoá truyện; xoá nhận xét vi phạm), quản lý thể loại và thẻ, và thống kê toàn hệ thống. Các truy vấn thống kê dùng nhiều phép tổng hợp và truy vấn con, kết quả được lưu đệm ngắn hạn trên Redis.
 
 \subsection{Hiện thực ứng dụng}
 
