@@ -1010,4 +1010,191 @@ ORDER BY s.ViewCount DESC, s.StoryId;
 \screenshot{studio-dashboard.png}{Giao diện bảng thống kê của tác giả}{fig:ui-studio-dashboard}
 
 \subsubsection{Module Quản trị}
-% TODO
+\label{subsubsec:feature-admin}
+
+\paragraph{Mô tả chức năng.} Module dành riêng cho quản trị viên, hiện thực các nhóm yêu cầu FR-11, FR-12 và FR-13 (phần duyệt yêu cầu tác giả đã trình bày ở mục~\ref{subsubsec:feature-author-request}):
+\begin{itemize}
+    \item \textbf{Quản lý người dùng:} tìm kiếm và lọc người dùng theo vai trò, trạng thái, từ khoá (tên đăng nhập, email, tên hiển thị) và khoảng ngày đăng ký; xem chi tiết tài khoản kèm hồ sơ tác giả và số yêu cầu tác giả theo trạng thái; khoá tài khoản kèm lý do bắt buộc và mở khoá; tạo tài khoản quản trị viên mới; cấp hoặc thu hồi dấu xác minh tác giả. Tài khoản quản trị viên không thể bị khoá, và người bị khoá bị đăng xuất ngay ở yêu cầu kế tiếp.
+    \item \textbf{Kiểm duyệt nội dung:} xem mọi truyện chưa xoá (kể cả bản nháp và truyện bị ẩn), lọc theo trạng thái, tác giả, tên truyện; ẩn truyện đang công khai kèm lý do, hiện lại truyện đã ẩn; xoá mềm truyện của bất kỳ tác giả nào; xoá nhận xét vi phạm.
+    \item \textbf{Quản lý danh mục:} thêm, sửa, xoá thể loại (chỉ xoá khi chưa có truyện nào dùng); tìm kiếm, đổi tên và xoá thẻ.
+    \item \textbf{Thống kê hệ thống:} số người dùng theo vai trò và trạng thái, số truyện theo trạng thái, tổng số chương, chữ, lượt xem và đánh giá; lượt xem toàn hệ thống theo ngày hoặc tháng; số truyện và lượt xem theo thể loại; người dùng mới theo tháng và vai trò; danh sách tác giả có tổng lượt xem cao hơn mức trung bình.
+\end{itemize}
+Các thao tác thay đổi trạng thái (khoá, mở khoá, ẩn, hiện truyện) đặt điều kiện tiên quyết ngay trong mệnh đề \texttt{WHERE} của câu \texttt{UPDATE}, nên khi hai quản trị viên thao tác cùng lúc chỉ một người thành công; nếu câu lệnh không ảnh hưởng dòng nào, service đọc lại trạng thái để trả về mã lỗi phù hợp. Sau mỗi thay đổi nội dung, các khoá đệm liên quan trên Redis bị xoá. Kết quả thống kê được lưu đệm 5 phút vì đây là các truy vấn tổng hợp trên toàn bộ dữ liệu.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-admin-ban} mô tả luồng khoá tài khoản. Sau khi tài khoản bị khoá, bộ lọc \texttt{UserStatusFilter} kiểm tra lại trạng thái ở mỗi yêu cầu của người dùng đó và huỷ phiên đăng nhập ngay lập tức.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_admin_ban.png}
+    \caption{Sơ đồ tuần tự khoá tài khoản người dùng}
+    \label{fig:seq-admin-ban}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-hide} mô tả luồng ẩn truyện vi phạm. Vì truyện bị ẩn không còn nằm trong view \texttt{vw\_PublicStory} và bộ nhớ đệm của truyện bị xoá, truyện biến mất khỏi các trang công khai ngay sau khi ẩn.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_admin_hide.png}
+    \caption{Sơ đồ tuần tự ẩn truyện vi phạm}
+    \label{fig:seq-admin-hide}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-review} mô tả luồng xoá nhận xét vi phạm. Trigger \texttt{trg\_Rating} tự tính lại điểm trung bình của truyện sau khi đánh giá bị xoá.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_admin_review.png}
+    \caption{Sơ đồ tuần tự xoá nhận xét vi phạm}
+    \label{fig:seq-admin-review}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-stats} mô tả luồng lấy số liệu tổng quan theo cơ chế cache-aside.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_admin_stats.png}
+    \caption{Sơ đồ tuần tự lấy số liệu thống kê tổng quan}
+    \label{fig:seq-admin-stats}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Tìm kiếm người dùng với nhiều bộ lọc} (truy vấn nhiều điều kiện, phân trang; mẫu \texttt{@keyword} có dạng \texttt{N'\%từ khoá\%'}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT u.UserId, u.Username, u.Email, u.DisplayName, u.Role, u.Status,
+       u.CreatedAt, u.LastLoginAt, u.BannedAt
+FROM dbo.[User] u
+WHERE u.Role = @role
+  AND u.Status = @status
+  AND (u.Username LIKE @keyword OR u.Email LIKE @keyword OR u.DisplayName LIKE @keyword)
+  AND u.CreatedAt >= @createdFrom AND u.CreatedAt < @createdTo
+ORDER BY u.CreatedAt DESC, u.UserId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Chi tiết người dùng} (kết nối ngoài với hồ sơ tác giả và với quản trị viên đã khoá tài khoản, kèm truy vấn con đếm số truyện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT u.UserId, u.Username, u.Email, u.Role, u.Status, u.BanReason,
+       b.Username AS BannedByUsername,
+       a.PenName, a.IsVerified, a.FollowerCount,
+       (SELECT COUNT(*) FROM dbo.Story s
+        WHERE s.AuthorId = a.UserId AND s.IsDeleted = 0) AS StoryCount
+FROM dbo.[User] u
+LEFT JOIN dbo.Author a ON a.UserId = u.UserId
+LEFT JOIN dbo.[User] b ON b.UserId = u.BannedBy
+WHERE u.UserId = @userId;
+\end{minted}
+
+\textit{Khoá tài khoản} (cập nhật với điều kiện tiên quyết trong \texttt{WHERE}: chỉ khoá tài khoản đang hoạt động và không phải quản trị viên):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.[User]
+SET Status = 'BANNED', BanReason = @reason, BannedBy = @adminId,
+    BannedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
+WHERE UserId = @userId AND Status = 'ACTIVE' AND Role <> 'ADMIN';
+\end{minted}
+
+\textit{Tạo tài khoản quản trị viên} (thêm dữ liệu):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT INTO dbo.[User] (Username, Email, PasswordHash, DisplayName, Role)
+VALUES (@username, @email, @passwordHash, @displayName, 'ADMIN');
+\end{minted}
+
+\textit{Ẩn truyện vi phạm} (cập nhật có điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.Story
+SET PublishStatus = 'HIDDEN', HiddenReason = @reason, UpdatedAt = SYSUTCDATETIME()
+WHERE StoryId = @storyId AND IsDeleted = 0 AND PublishStatus = 'PUBLISHED';
+\end{minted}
+
+\textit{Xoá mềm truyện} trong thủ tục \texttt{sp\_DeleteStory}, dùng chung cho tác giả và quản trị viên (giao dịch có khoá dòng và kiểm tra quyền):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT @OwnerId = AuthorId
+FROM dbo.Story WITH (UPDLOCK, HOLDLOCK)
+WHERE StoryId = @StoryId AND IsDeleted = 0;
+
+IF NOT (   (@OwnerId = @UserId AND EXISTS (SELECT 1 FROM dbo.[User]
+                WHERE UserId = @UserId AND Role = 'AUTHOR' AND Status = 'ACTIVE'))
+        OR EXISTS (SELECT 1 FROM dbo.[User]
+                WHERE UserId = @UserId AND Role = 'ADMIN' AND Status = 'ACTIVE'))
+    THROW 50002, N'Only the owner or an ADMIN can delete this story.', 1;
+
+UPDATE dbo.Story
+SET IsDeleted = 1, DeletedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
+WHERE StoryId = @StoryId;
+\end{minted}
+
+\textit{Xoá nhận xét vi phạm} (xoá dữ liệu; trigger \texttt{trg\_Rating} cập nhật lại điểm của truyện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+DELETE dbo.Rating WHERE UserId = @userId AND StoryId = @storyId;
+\end{minted}
+
+\textit{Xoá thể loại chưa được dùng và xoá thẻ} (truy vấn con \texttt{EXISTS} và xoá dữ liệu; các dòng \texttt{StoryTag} được xoá trước vì ràng buộc khoá ngoại):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.StoryGenre WHERE GenreId = @genreId)
+            THEN 1 ELSE 0 END AS GenreInUse;
+DELETE dbo.Genre WHERE GenreId = @genreId;
+
+DELETE dbo.StoryTag WHERE TagId = @tagId;
+DELETE dbo.Tag      WHERE TagId = @tagId;
+\end{minted}
+
+\textit{Số người dùng theo vai trò và trạng thái, số truyện theo trạng thái} (hàm tổng hợp với \texttt{GROUP BY}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT Role, Status, COUNT(*) AS Total
+FROM dbo.[User]
+GROUP BY Role, Status;
+
+SELECT PublishStatus, COUNT(*) AS Total
+FROM dbo.Story
+WHERE IsDeleted = 0
+GROUP BY PublishStatus;
+\end{minted}
+
+\textit{Số truyện công khai và lượt xem theo thể loại} (kết nối ngoài lồng kết nối trong và hàm tổng hợp; thể loại chưa có truyện vẫn được liệt kê với giá trị 0):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT g.GenreId, g.Name, g.Slug,
+       COUNT(s.StoryId)              AS StoryCount,
+       COALESCE(SUM(s.ViewCount), 0) AS TotalViews
+FROM dbo.Genre g
+LEFT JOIN (dbo.StoryGenre sg
+           JOIN dbo.vw_PublicStory s ON s.StoryId = sg.StoryId)
+       ON sg.GenreId = g.GenreId
+GROUP BY g.GenreId, g.Name, g.Slug, g.SortOrder
+ORDER BY StoryCount DESC, g.SortOrder, g.GenreId;
+\end{minted}
+
+\textit{Người dùng mới theo tháng và vai trò} (bảng dẫn xuất và hàm tổng hợp; thời điểm tạo được đổi sang giờ Việt Nam trước khi nhóm theo tháng):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT x.Month, x.Role, COUNT(*) AS Total
+FROM (SELECT u.Role,
+             DATEFROMPARTS(YEAR(DATEADD(MINUTE, 420, u.CreatedAt)),
+                           MONTH(DATEADD(MINUTE, 420, u.CreatedAt)), 1) AS Month
+      FROM dbo.[User] u
+      WHERE u.CreatedAt >= @sinceUtc) x
+GROUP BY x.Month, x.Role
+ORDER BY x.Month, x.Role;
+\end{minted}
+
+\textit{Tác giả có tổng lượt xem cao hơn mức trung bình toàn hệ thống} (hàm tổng hợp với \texttt{GROUP BY}, \texttt{HAVING} và truy vấn con):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT TOP (20) a.UserId AS AuthorId, a.PenName, a.IsVerified, a.FollowerCount,
+       COUNT(*) AS StoryCount, SUM(s.ViewCount) AS TotalViews
+FROM dbo.Story s
+JOIN dbo.Author a ON a.UserId = s.AuthorId
+WHERE s.IsDeleted = 0
+GROUP BY a.UserId, a.PenName, a.IsVerified, a.FollowerCount
+HAVING SUM(s.ViewCount) > (
+    SELECT AVG(CAST(t.Total AS DECIMAL(20,2)))
+    FROM (SELECT SUM(ViewCount) AS Total
+          FROM dbo.Story WHERE IsDeleted = 0
+          GROUP BY AuthorId) t)
+ORDER BY TotalViews DESC, a.UserId;
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{admin-users.png}{Giao diện quản lý người dùng}{fig:ui-admin-users}
+\screenshot{admin-user-detail.png}{Giao diện chi tiết và khoá tài khoản}{fig:ui-admin-user-detail}
+\screenshot{admin-stories.png}{Giao diện kiểm duyệt truyện}{fig:ui-admin-stories}
+\screenshot{admin-catalog.png}{Giao diện quản lý thể loại và thẻ}{fig:ui-admin-catalog}
+\screenshot{admin-dashboard.png}{Giao diện bảng thống kê toàn hệ thống}{fig:ui-admin-dashboard}
