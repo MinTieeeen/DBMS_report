@@ -159,9 +159,71 @@ Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đ
 \paragraph{Module Quản trị.} Dành cho quản trị viên, gồm quản lý người dùng (tìm kiếm, khoá, mở khoá, tạo quản trị viên, cấp dấu xác minh), kiểm duyệt nội dung (ẩn, hiện, xoá truyện; xoá nhận xét vi phạm), quản lý thể loại và thẻ, và thống kê toàn hệ thống. Các truy vấn thống kê dùng nhiều phép tổng hợp và truy vấn con, kết quả được lưu đệm ngắn hạn trên Redis.
 
 \subsection{Hiện thực ứng dụng}
+\label{subsec:implementation}
 
 \subsubsection{Cấu trúc mã nguồn}
-% TODO
+\label{subsubsec:source-structure}
+
+\begin{tcolorbox}[colback=blue!6, colframe=blue!60!black, boxrule=0.8pt, arc=2mm, left=4mm, right=4mm, top=2mm, bottom=2mm]
+\textbf{Mã nguồn dự án:} \url{https://github.com/MinTieeeen/novelle}
+\end{tcolorbox}
+
+\paragraph{Frontend.} Mã nguồn frontend nằm trong thư mục \texttt{src/}, chia theo vai trò kỹ thuật. Các trang và thành phần giao diện được nhóm theo khu vực chức năng: người đọc, tài khoản, khu vực sáng tác và khu vực quản trị.
+
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_frontend/
+|-- src/
+|   |-- app/          Khởi tạo ứng dụng, router, provider
+|   |-- pages/        Các trang: reader/, account/, studio/, admin/
+|   |-- components/   Thành phần giao diện theo chức năng và bộ UI cơ bản
+|   |-- layouts/      Bố cục chung của từng khu vực
+|   |-- hooks/        Hook đóng gói thao tác và gọi API
+|   |-- api/          Hàm gọi REST API, mỗi tệp ứng với một module nghiệp vụ
+|   |-- auth/         Trạng thái đăng nhập, chặn truy cập theo vai trò
+|   |-- types/        Kiểu dữ liệu TypeScript dùng chung
+|   `-- lib/, utils/  Hàm tiện ích
+|-- public/           Tài nguyên tĩnh (ảnh bìa, biểu tượng)
+\end{minted}
+
+\paragraph{Backend.} Backend là một dự án Maven. Mã Java nằm trong gói gốc \texttt{com.novelle} và được chia theo lớp; câu lệnh SQL không viết trong mã Java mà tách ra các tệp XML của MyBatis, và các script Lua dùng cho Redis cũng được đặt riêng trong thư mục tài nguyên.
+
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_backend/
+|-- src/main/java/com/novelle/
+|   |-- controller/        REST controller
+|   |-- service/           Logic nghiệp vụ, quản lý giao dịch
+|   |-- mapper/            Interface MyBatis mapper
+|   |-- model/             Đối tượng nhận kết quả truy vấn
+|   |-- dto/               Đối tượng dữ liệu vào/ra của API
+|   |-- exception/         Mã lỗi và xử lý lỗi tập trung
+|   |-- config/            Cấu hình bảo mật, CORS, lịch tác vụ
+|   `-- infrastructure/    Hạ tầng: security, ratelimit, cache, views, jobs, html, mybatis
+|-- src/main/resources/
+|   |-- mapper/            Câu lệnh SQL của từng mapper (XML)
+|   |-- redis/             Script Lua thực thi nguyên tử trên Redis
+|-- scripts/               Script chạy nạp dữ liệu mẫu
+\end{minted}
+
+\paragraph{Cơ sở dữ liệu.} Novelle không dùng công cụ migration; toàn bộ cơ sở dữ liệu trên SQL Server được tạo và khởi tạo bằng các script SQL, đánh số theo thứ tự chạy. Ứng dụng chỉ đọc và ghi dữ liệu, không tự thay đổi lược đồ.
+
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_backend/database/
+|-- bootstrap/                 Chạy một lần với quyền quản trị
+|   |-- 00_create_database.sql      Tạo cơ sở dữ liệu NovelleDB
+|   `-- 01_create_logins_users.sql  Tạo tài khoản đăng nhập và phân quyền
+|-- schema/                    Định nghĩa lược đồ
+|   |-- 01_tables.sql               18 bảng, khoá chính, khoá ngoại, CHECK
+|   |-- 02_indexes.sql              Chỉ mục
+|   |-- 03_fulltext.sql             Chỉ mục toàn văn
+|   |-- 04_views.sql                View
+|   |-- 05_procedures.sql           Thủ tục lưu trữ
+|   |-- 06_triggers.sql             Trigger
+|   `-- 07_reference_data.sql       Dữ liệu danh mục cố định (thể loại)
+|-- seed/                      Sinh dữ liệu mẫu (10_ ... 90_)
+`-- queries/                   Truy vấn kiểm tra và kịch bản minh hoạ
+\end{minted}
+
+Các script trong \texttt{schema/} đều có thể chạy lại nhiều lần: bảng chỉ được tạo khi chưa tồn tại, còn view, thủ tục và trigger dùng \texttt{CREATE OR ALTER}. Sau khi nạp dữ liệu mẫu, script \texttt{queries/99\_check\_invariants.sql} được chạy để kiểm tra các giá trị dẫn xuất và ràng buộc nghiệp vụ còn đúng.
 
 \subsubsection{Hiện thực Backend}
 % TODO
@@ -178,5 +240,5 @@ Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đ
 \subsubsection{Triển khai ứng dụng}
 % TODO
 
-\subsection{Minh họa các chức năng chính}
+\subsubsection{Minh họa các chức năng chính}
 % TODO: chèn ảnh chụp màn hình vào image/chapter5/
