@@ -665,7 +665,144 @@ GROUP BY r.Score;
 \screenshot{library-rating.png}{Giao diện đánh giá và danh sách nhận xét của truyện}{fig:ui-library-rating}
 
 \subsubsection{Module Yêu cầu tác giả}
-% TODO
+\label{subsubsec:feature-author-request}
+
+\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-7 và phần duyệt tác giả của FR-11.3:
+\begin{itemize}
+    \item \textbf{Gửi yêu cầu:} người đọc đang hoạt động gửi bút danh đề xuất và lời giới thiệu; yêu cầu mới có trạng thái \texttt{PENDING}. Mỗi người chỉ có tối đa một yêu cầu đang chờ, và bút danh không được trùng với tác giả đã có. Tác giả và quản trị viên không được gửi yêu cầu.
+    \item \textbf{Theo dõi và huỷ yêu cầu:} người gửi xem lại toàn bộ yêu cầu của mình kèm trạng thái, ghi chú phản hồi và thời điểm xét duyệt; yêu cầu đang chờ có thể được huỷ (trạng thái \texttt{CANCELLED}).
+    \item \textbf{Hàng đợi duyệt:} quản trị viên xem danh sách yêu cầu theo trạng thái (mặc định là đang chờ, cũ nhất trước), nhận biết người từng bị từ chối, và xem chi tiết từng yêu cầu kèm thông tin người gửi.
+    \item \textbf{Duyệt và từ chối:} khi duyệt, trạng thái yêu cầu, vai trò tài khoản và hồ sơ tác giả được thay đổi trong cùng một giao dịch; khi từ chối, quản trị viên có thể kèm ghi chú phản hồi. Vai trò mới có hiệu lực ngay ở yêu cầu tiếp theo của người dùng, không cần đăng nhập lại.
+\end{itemize}
+Điểm quan trọng nhất của module là bảo đảm \textbf{mỗi yêu cầu chỉ được xử lý một lần}, kể cả khi hai quản trị viên bấm duyệt cùng lúc. Ràng buộc này được hiện thực bằng khoá dòng trong thủ tục lưu trữ trên SQL Server; ngoài ra, hệ thống có thể bật thêm khoá phân tán trên Redis để so sánh hai cơ chế kiểm soát đồng thời. Việc gửi yêu cầu bị giới hạn 3 lần mỗi ngày trên một tài khoản.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-author-submit} mô tả luồng gửi yêu cầu. Ngoài các kiểm tra ở service, unique index có lọc \texttt{UX\_AuthorRequest\_Pending} trên SQL Server là lớp bảo vệ cuối cùng khi hai yêu cầu được gửi đồng thời.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_author_submit.png}
+    \caption{Sơ đồ tuần tự gửi yêu cầu trở thành tác giả}
+    \label{fig:seq-author-submit}
+\end{figure}
+
+Hình~\ref{fig:seq-author-approve} mô tả luồng duyệt yêu cầu. Toàn bộ thay đổi dữ liệu nằm trong thủ tục \texttt{sp\_ApproveAuthorRequest}; thủ tục tự kiểm tra lại trạng thái sau khi đã khoá dòng và trả mã lỗi riêng cho từng trường hợp không hợp lệ.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_author_approve.png}
+    \caption{Sơ đồ tuần tự duyệt yêu cầu trở thành tác giả}
+    \label{fig:seq-author-approve}
+\end{figure}
+
+Hình~\ref{fig:seq-author-race} mô tả tình huống hai quản trị viên cùng duyệt một yêu cầu. Phiên B phải chờ khoá do phiên A giữ; khi A hoàn tất, B đọc được trạng thái đã duyệt và nhận lỗi \texttt{50001}, nên hồ sơ tác giả không bị tạo hai lần.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_author_race.png}
+    \caption{Sơ đồ tuần tự hai quản trị viên duyệt cùng một yêu cầu}
+    \label{fig:seq-author-race}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Gửi yêu cầu} (thêm dữ liệu; trạng thái và thời điểm tạo lấy từ giá trị mặc định của cột):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.AuthorRequest (UserId, ProposedPenName, Introduction)
+VALUES (@userId, @proposedPenName, @introduction);
+\end{minted}
+
+\textit{Kiểm tra yêu cầu đang chờ và bút danh} (truy vấn con \texttt{EXISTS}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.AuthorRequest
+                         WHERE UserId = @userId AND Status = 'PENDING')
+            THEN 1 ELSE 0 END AS HasPending;
+
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Author WHERE PenName = @penName)
+            THEN 1 ELSE 0 END AS PenNameTaken;
+\end{minted}
+
+\textit{Yêu cầu của tôi} (truy vấn một điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT RequestId, ProposedPenName, Introduction, Status, ReviewNote, CreatedAt, ReviewedAt
+FROM dbo.AuthorRequest
+WHERE UserId = @userId
+ORDER BY CreatedAt DESC, RequestId DESC;
+\end{minted}
+
+\textit{Huỷ yêu cầu} (cập nhật nhiều điều kiện; điều kiện \texttt{Status = 'PENDING'} trong \texttt{WHERE} bảo đảm chỉ huỷ được yêu cầu còn đang chờ):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.AuthorRequest
+SET Status = 'CANCELLED'
+WHERE RequestId = @requestId AND UserId = @userId AND Status = 'PENDING';
+\end{minted}
+
+\textit{Hàng đợi duyệt} (truy vấn kết nối và truy vấn con tương quan, đánh dấu người từng bị từ chối ở yêu cầu khác):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT r.RequestId, r.ProposedPenName, r.Status, r.CreatedAt, r.ReviewedAt,
+       u.UserId, u.Username, u.AvatarUrl,
+       CASE WHEN EXISTS (
+           SELECT 1 FROM dbo.AuthorRequest r2
+           WHERE r2.UserId = r.UserId AND r2.Status = 'REJECTED'
+             AND r2.RequestId <> r.RequestId)
+       THEN 1 ELSE 0 END AS PreviouslyRejected
+FROM dbo.AuthorRequest r
+JOIN dbo.[User] u ON u.UserId = r.UserId
+WHERE r.Status = 'PENDING'
+ORDER BY r.CreatedAt ASC, r.RequestId ASC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Số yêu cầu khác của cùng người gửi theo trạng thái} (hàm tổng hợp với \texttt{GROUP BY} và truy vấn con):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT o.Status, COUNT(*) AS Total
+FROM dbo.AuthorRequest o
+WHERE o.UserId = (SELECT r.UserId FROM dbo.AuthorRequest r WHERE r.RequestId = @requestId)
+  AND o.RequestId <> @requestId
+GROUP BY o.Status;
+\end{minted}
+
+\textit{Thủ tục duyệt yêu cầu \texttt{sp\_ApproveAuthorRequest}} (giao dịch gồm khoá dòng, các kiểm tra và ba thao tác ghi). Gợi ý \texttt{UPDLOCK, HOLDLOCK} khiến phiên duyệt thứ hai phải chờ phiên thứ nhất kết thúc rồi mới đọc được trạng thái:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+BEGIN TRANSACTION;
+
+SELECT @UserId = UserId, @PenName = ProposedPenName, @Status = Status
+FROM dbo.AuthorRequest WITH (UPDLOCK, HOLDLOCK)
+WHERE RequestId = @RequestId;
+
+IF @@ROWCOUNT = 0
+    THROW 50004, N'Author request not found.', 1;
+IF NOT EXISTS (SELECT 1 FROM dbo.[User]
+               WHERE UserId = @AdminId AND Role = 'ADMIN' AND Status = 'ACTIVE')
+    THROW 50002, N'Only an active ADMIN can review author requests.', 1;
+IF @Status <> 'PENDING'
+    THROW 50001, N'Author request was already processed.', 1;
+IF NOT EXISTS (SELECT 1 FROM dbo.[User] WITH (UPDLOCK)
+               WHERE UserId = @UserId AND Role = 'READER' AND Status = 'ACTIVE')
+    THROW 50002, N'The applicant is not an active READER.', 1;
+IF EXISTS (SELECT 1 FROM dbo.Author WITH (UPDLOCK, HOLDLOCK) WHERE PenName = @PenName)
+    THROW 50003, N'Pen name is already in use.', 1;
+
+UPDATE dbo.AuthorRequest
+SET Status = 'APPROVED', ReviewedBy = @AdminId, ReviewedAt = SYSUTCDATETIME()
+WHERE RequestId = @RequestId;
+
+UPDATE dbo.[User]
+SET Role = 'AUTHOR', UpdatedAt = SYSUTCDATETIME()
+WHERE UserId = @UserId;
+
+INSERT dbo.Author (UserId, PenName, ApprovedRequestId)
+VALUES (@UserId, @PenName, @RequestId);
+
+COMMIT TRANSACTION;
+\end{minted}
+Thủ tục được bọc trong \texttt{BEGIN TRY \ldots{} END TRY} với \texttt{SET XACT\_ABORT ON}; khi có lỗi, khối \texttt{CATCH} huỷ giao dịch và ném lại lỗi để backend chuyển thành mã HTTP tương ứng. Thủ tục từ chối \texttt{sp\_RejectAuthorRequest} có cấu trúc tương tự, chỉ cập nhật trạng thái \texttt{REJECTED} và ghi chú phản hồi.
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{author-request-form.png}{Giao diện gửi yêu cầu trở thành tác giả}{fig:ui-author-request-form}
+\screenshot{author-request-status.png}{Giao diện theo dõi trạng thái các yêu cầu đã gửi}{fig:ui-author-request-status}
+\screenshot{author-request-queue.png}{Giao diện hàng đợi yêu cầu của quản trị viên}{fig:ui-author-request-queue}
+\screenshot{author-request-review.png}{Giao diện chi tiết và duyệt yêu cầu}{fig:ui-author-request-review}
 
 \subsubsection{Module Studio sáng tác}
 % TODO
