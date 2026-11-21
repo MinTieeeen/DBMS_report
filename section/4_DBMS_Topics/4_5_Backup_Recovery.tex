@@ -1,17 +1,75 @@
 \subsection{Sao lưu và phục hồi dữ liệu (Data Backup and Recovery)}
 \label{subsec:backup-recovery}
 
+Mục này so sánh khả năng bảo vệ dữ liệu và khôi phục sau sự cố của MS SQL Server và Redis trong Novelle. Nội dung tập trung vào ba tình huống: mất tiến trình hoặc máy chủ, giao dịch lỗi giữa chừng và người dùng xoá nhầm dữ liệu. Phần thực nghiệm sử dụng SQL Server trên AWS RDS dùng chung và Redis chạy cục bộ; do khác biệt về hạ tầng, thời gian tuyệt đối giữa hai hệ thống chỉ có giá trị tham khảo.
+
 \subsubsection{Cơ sở lý thuyết}
-% TODO
+
+Sao lưu tạo bản dữ liệu có thể dùng lại khi dữ liệu chính bị mất hoặc hỏng; phục hồi đưa hệ thống về trạng thái nhất quán sau sự cố. Hai chỉ số thường dùng là \textit{Recovery Point Objective} (RPO), lượng dữ liệu tối đa có thể mất tính theo thời gian, và \textit{Recovery Time Objective} (RTO), thời gian cần để dịch vụ hoạt động trở lại. RPO phụ thuộc vào tần suất và độ bền của bản sao lưu; RTO còn phụ thuộc dung lượng cần nạp lại và quy trình khôi phục.
+
+Sao lưu định kỳ và ghi log liên tục giải quyết các phạm vi sự cố khác nhau. Bản sao lưu đầy đủ giúp khôi phục một tập dữ liệu lớn, còn log giao dịch cho phép đưa cơ sở dữ liệu đến một thời điểm gần hiện tại. Cơ chế ghi bền vững cũng quan trọng: một hệ thống có thể xác nhận thao tác sau khi ghi log xuống bộ nhớ bền, hoặc trả lời sớm hơn và chấp nhận một khoảng dữ liệu gần nhất có thể mất khi mất điện. Cần phân biệt lỗi tiến trình khi đĩa còn nguyên với hỏng hoặc mất toàn bộ máy chủ; bản sao chỉ nằm trên cùng máy không bảo vệ được tình huống thứ hai.
+
+Khôi phục giao dịch lỗi giữa chừng liên quan đến tính nguyên tử: hoặc toàn bộ thay đổi được ghi nhận, hoặc thay đổi chưa hoàn tất được hoàn tác. Xoá nhầm lại là vấn đề khác: muốn khôi phục riêng một dòng hoặc một key, cần có lịch sử phiên bản hoặc bản sao được tạo trước thời điểm xoá. Vì vậy, không một chỉ số RPO đơn lẻ nào mô tả đầy đủ khả năng phục hồi của DBMS \cite{mslearn_recovery_models,mslearn_transaction_log,redis_persistence}.
 
 \subsubsection{Cơ chế sao lưu và phục hồi dữ liệu trên MS SQL Server}
-% TODO
+
+SQL Server sử dụng transaction log theo cơ chế write-ahead logging: bản ghi log liên quan phải được ghi bền vững trước khi trang dữ liệu tương ứng được ghi xuống tệp dữ liệu. Khi phục hồi sau sự cố, engine phát lại các thao tác đã commit (redo) và hoàn tác các giao dịch chưa commit (undo). Với recovery model \texttt{FULL}, kết hợp bản sao lưu đầy đủ, bản sao lưu log và chuỗi log liên tục, cơ sở dữ liệu có thể được khôi phục đến một thời điểm cụ thể. Trong môi trường AWS RDS, lịch sao lưu tự động và point-in-time recovery do dịch vụ quản lý \cite{mslearn_transaction_log,aws_rds_backup_restore,aws_rds_pitr}.
+
+Quyền của nhóm trên RDS không cho phép chạy \texttt{BACKUP DATABASE ... TO DISK}; thủ tục native backup ra S3 cũng chưa được cấu hình option group và IAM cần thiết. Vì vậy, thực nghiệm không tự tạo bản backup mà đọc lịch sử backup do RDS ghi trong \texttt{msdb.dbo.backupset}. Kết quả ghi nhận full backup hằng ngày và log backup xấp xỉ mỗi 5 phút. Khoảng cách lớn nhất quan sát được giữa các log backup là 432 giây, tương ứng RPO tối đa khoảng 7,2 phút khi mất cả instance theo lịch sử mẫu; đây không phải phép thử khôi phục một instance thực tế.
+
+Với lỗi tiến trình, SQL Server bảo toàn giao dịch đã commit nhờ log và loại bỏ giao dịch còn dở bằng undo. Để xử lý lỗi trong logic ứng dụng, cần bảo đảm transaction được rollback khi một câu lệnh thất bại. Thí nghiệm cho thấy khi bật \texttt{XACT\_ABORT ON}, lỗi giữa giao dịch khiến toàn bộ thay đổi chưa commit bị huỷ; nếu để mặc định \texttt{XACT\_ABORT OFF} rồi vẫn gọi \texttt{COMMIT}, các bước trước lỗi có thể còn lại. Bảng temporal cũng được dùng để lưu phiên bản cũ của dữ liệu và khôi phục các chương bị xoá tại một thời điểm trước đó \cite{mslearn_set_xact_abort,mslearn_temporal_tables}.
 
 \subsubsection{Cơ chế sao lưu và phục hồi dữ liệu trên Redis}
-% TODO
+
+Redis duy trì bản sao trong bộ nhớ và hỗ trợ hai cơ chế lưu bền chính. RDB tạo ảnh chụp tại một thời điểm; AOF ghi lại các lệnh làm thay đổi dữ liệu để phát lại khi khởi động. Cấu hình Novelle bật AOF với \texttt{appendfsync everysec}, đồng thời giữ các quy tắc chụp RDB mặc định. Theo tài liệu Redis, \texttt{everysec} thường giới hạn khoảng dữ liệu có thể mất khi máy bị sự cố ở xấp xỉ một giây, nhưng RDB chỉ phản ánh thời điểm của lần snapshot gần nhất. RDB và AOF trên cùng máy không thay thế bản sao ngoại vi nếu mất toàn bộ máy chủ \cite{redis_persistence}.
+
+Redis phát lại AOF để dựng lại trạng thái trong bộ nhớ; đây chủ yếu là quá trình redo, không tương đương transaction log có undo của SQL Server. Lệnh \texttt{MULTI/EXEC} bảo đảm các lệnh được thực thi liên tiếp, nhưng lỗi lúc chạy một lệnh không tự hoàn tác những lệnh trước đó. Đối với xoá nhầm một key, \texttt{DUMP} và \texttt{RESTORE} có thể khôi phục nội dung từ bản dump đã tạo trước đó; thao tác này không cung cấp lịch sử phiên bản hay khả năng quay về thời điểm tuỳ ý \cite{redis_transactions,redis_dump,redis_restore}.
 
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
-% TODO
+
+Năm cặp kịch bản được chạy trên dữ liệu thử có tiền tố \texttt{lab:} để hạn chế ảnh hưởng tới dữ liệu ứng dụng. Phía SQL Server chạy trên RDS dùng chung; các thao tác cần điều khiển tiến trình, AOF hoặc cấu hình Redis chỉ chạy trên Redis cục bộ sau khi kiểm tra vùng dữ liệu thí nghiệm. Kịch bản tắt Redis được đánh dấu phá huỷ và yêu cầu cờ cho phép riêng.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|p{0.23\textwidth}|X|X|}
+\hline
+\textbf{Nội dung} & \textbf{SQL Server} & \textbf{Redis} \\ \hline
+Backup và RPO & Đọc lịch sử full/log backup 7 ngày trong \texttt{msdb}; đo khoảng cách giữa các log backup. & Tạo snapshot RDB và AOF trên khoảng 20.150 key; đọc trạng thái persistence. \\ \hline
+Chi phí ghi bền vững & So sánh 500 lần commit riêng với một transaction theo lô; ghi nhận log flush và thời gian chờ \texttt{WRITELOG}. & So sánh \texttt{appendfsync everysec}, \texttt{always} và ghi theo lô bằng \texttt{MULTI/EXEC}. \\ \hline
+Lỗi giữa transaction & Gây lỗi sau bước ghi đầu tiên, so sánh hành vi với \texttt{XACT\_ABORT ON/OFF}. & Gây lỗi runtime và lỗi lúc xếp hàng trong \texttt{MULTI/EXEC}. \\ \hline
+Xoá nhầm & Xoá 40 chương trong bảng temporal rồi khôi phục theo thời điểm trước khi xoá. & Tạo \texttt{DUMP} cho 40 hash, xoá key rồi phục hồi bằng \texttt{RESTORE}. \\ \hline
+Sự cố tiến trình & Commit 1.000 dòng, để 1.000 dòng trong transaction chưa commit rồi ngắt phiên. & Ghi 50.000 key, tắt bằng \texttt{SHUTDOWN NOSAVE}, khởi động lại container và kiểm tra AOF. \\ \hline
+\end{tabularx}
+\caption{Các kịch bản thực nghiệm về sao lưu và phục hồi}
+\label{tab:backup-recovery-scenarios}
+\end{table}
+
+Report được lưu trong repo ghi nhận lần chạy ngày 08/11/2026. Các số đo dưới đây là của lần chạy đó; phép đo SQL Server dùng RDS của nhóm còn Redis dùng máy cục bộ, nên so sánh thời gian chủ yếu nhằm minh hoạ cơ chế trong cùng kịch bản.
 
 \subsubsection{So sánh và đánh giá}
-% TODO
+
+\paragraph{Kết quả thực nghiệm.} Cả 10 scenario của lần chạy đều đạt các điều kiện kiểm tra. Bảng~\ref{tab:backup-recovery-results} tóm tắt các số đo chính. RPO được phân loại theo sự cố để tránh so sánh các trường hợp không cùng phạm vi.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|p{0.25\textwidth}|X|X|}
+\hline
+\textbf{Chỉ số / tình huống} & \textbf{SQL Server} & \textbf{Redis} \\ \hline
+RPO khi tiến trình lỗi & 0 giây đối với transaction đã commit trong kịch bản. & 0 key xác nhận ghi bị mất trong lần \texttt{SHUTDOWN NOSAVE}; cấu hình \texttt{everysec} hướng tới khoảng mất tối đa 1 giây khi mất điện. \\ \hline
+Mất cả instance / máy & Log backup RDS cách nhau tối đa quan sát được 432 giây; thời gian chạy phép đọc lịch sử khoảng 12 giây cho 3,22 MB. & AOF/RDB cùng máy không bảo vệ khi mất máy; cần sao chép bản sao ra nơi khác. \\ \hline
+Chi phí ghi & 500 commit riêng: khoảng 1,25 ms mỗi dòng và 511 ms chờ \texttt{WRITELOG}; theo lô: khoảng 0,0213 ms mỗi dòng. & \texttt{appendfsync always}: khoảng 10,4 ms mỗi lần ghi trong phép thử; ghi theo lô: khoảng 0,0727 ms mỗi lệnh. \\ \hline
+Transaction lỗi giữa chừng & Với \texttt{XACT\_ABORT ON}, không còn dòng thay đổi dở dang. & Lỗi runtime trong \texttt{EXEC} có thể để lại thay đổi của lệnh đã chạy trước đó. \\ \hline
+Khôi phục xoá nhầm & Temporal table khôi phục 40 dòng, p50 khoảng 54,2 ms. & \texttt{DUMP/RESTORE} khôi phục key đã chụp, p50 khoảng 4,46 ms. \\ \hline
+Phục hồi sau sự cố & Giữ 1.000 dòng đã commit và rollback 1.000 dòng chưa commit. & Nạp lại 76.191 key, gồm đủ 50.000 key thử nghiệm; thời gian phục hồi khoảng 10,4 giây. \\ \hline
+\end{tabularx}
+\caption{Kết quả chính của lần chạy ngày 08/11/2026}
+\label{tab:backup-recovery-results}
+\end{table}
+
+Kết quả cho thấy SQL Server phù hợp làm nơi lưu dữ liệu nghiệp vụ cần bảo toàn nhất quán: transaction log hỗ trợ redo/undo, còn backup tự động và log backup của RDS cung cấp đường khôi phục khi mất instance. Temporal table cho phép khôi phục một phần dữ liệu bị xoá mà không cần phục hồi toàn bộ cơ sở dữ liệu. Ứng dụng vẫn cần xử lý lỗi transaction đúng cách, chẳng hạn bật \texttt{XACT\_ABORT ON} hoặc rollback trong nhánh bắt lỗi.
+
+Redis cung cấp khả năng khởi động lại nhanh từ AOF và khôi phục key riêng khi có bản \texttt{DUMP} trước đó. Tuy nhiên, \texttt{MULTI/EXEC} không rollback lỗi runtime và AOF/RDB nằm trên cùng máy không bảo vệ trước mất toàn bộ máy. Vì vậy Redis phù hợp với cache, session, bản nháp và bộ đếm có thể chấp nhận một mức mất dữ liệu nhỏ hoặc được đồng bộ sang SQL Server; dữ liệu gốc như tài khoản, truyện và chương nên tiếp tục được lưu trong SQL Server. Nếu triển khai Redis cần chịu được mất máy, cần sao chép AOF/RDB ra kho lưu trữ độc lập.
+
+Các kết quả có giới hạn: nhóm không có quyền thực hiện native backup hoặc phục hồi toàn instance trên RDS, nên RPO mất instance được suy ra từ lịch sử backup chứ không đo bằng một lần khôi phục thật. Kịch bản Redis dùng \texttt{SHUTDOWN NOSAVE}, lệnh này vẫn xả AOF trước khi tắt; do đó phép thử xác nhận khả năng nạp lại AOF nhưng không mô phỏng mất điện. Ngoài ra, Redis chạy local còn SQL Server chạy RDS, nên các thời gian tuyệt đối và tỷ lệ tốc độ không đại diện cho so sánh phần cứng ngang nhau.
