@@ -1,3 +1,19 @@
-\subsection{Tổng hợp và so sánh kết quả nghiên cứu}
+\subsection{Kết luận}
 \label{subsec:topics-summary}
-% TODO
+
+Qua năm chủ đề đã nghiên cứu, hai hệ quản trị cho thấy cùng một sự đánh đổi: \textbf{SQL Server ưu tiên tính đúng và độ bền, Redis ưu tiên tốc độ}. SQL Server tự đảm nhận phần lớn việc giữ cho dữ liệu đúng (ràng buộc, khoá, rollback, tối ưu truy vấn, sao lưu); Redis giao những việc này cho ứng dụng để đổi lấy tốc độ cao hơn nhiều. Vì vậy hai hệ quản trị không thay thế được nhau mà bổ sung cho nhau: SQL Server phù hợp làm \textbf{nguồn dữ liệu gốc}, còn Redis phù hợp làm \textbf{lớp phục vụ nhanh} cho dữ liệu đọc ghi thường xuyên, có dạng truy cập cố định và có thể tạo lại hoặc chấp nhận mất một phần.
+
+\begin{itemize}
+    \item \textbf{Lưu trữ và quản lý dữ liệu:} SQL Server lưu dữ liệu trên đĩa nên chậm hơn nhưng không mất dữ liệu khi thiếu bộ nhớ. Redis lưu trên RAM nên đọc ghi nhanh hơn nhiều, nhưng khi đầy bộ nhớ phải từ chối ghi hoặc xoá bớt key.
+    \item \textbf{Cấu trúc chỉ mục:} SQL Server có sẵn nhiều loại chỉ mục, tự cập nhật trong giao tác và hỗ trợ tìm kiếm toàn văn tiếng Việt. Redis chỉ có sẵn truy cập theo tên key; chỉ mục phụ phải tự xây và tự đồng bộ, hoặc dùng RediSearch nhưng không xử lý tốt tiếng Việt có dấu.
+    \item \textbf{Xử lý truy vấn:} SQL Server tự chọn kế hoạch thực thi và trả lời được mọi câu hỏi, nhưng truy vấn nặng chậm dần khi dữ liệu tăng. Redis đọc luôn nhanh và ổn định, nhưng chỉ trả lời được những câu hỏi đã được chuẩn bị sẵn bằng cấu trúc dữ liệu phù hợp.
+    \item \textbf{Xử lý giao tác:} SQL Server rollback được toàn bộ khi có lỗi và có ràng buộc làm lớp bảo vệ cuối cùng, nhưng thiết kế giao tác sai có thể gây deadlock. Redis không có rollback và ràng buộc; tính đúng phụ thuộc hoàn toàn vào code ứng dụng, trong đó script Lua là cách an toàn và nhanh nhất.
+    \item \textbf{Sao lưu và phục hồi:} SQL Server không mất giao tác đã commit và khôi phục được tới một thời điểm bất kỳ nhờ nhật ký giao tác và sao lưu của RDS. Redis khởi động lại nhanh từ AOF nhưng có thể mất khoảng một giây dữ liệu, và không có bản sao ngoài máy nếu không tự cấu hình.
+\end{itemize}
+
+Dựa trên những kết quả đã được nghiên cứu và theo hướng áp dụng, nhóm đã đưa ra những đề xuất hướng triển khai cho ứng dụng Novelle dựa trên điểm mạnh của 2 hệ quản trị cơ sở dữ liệu:
+
+\begin{itemize}
+    \item \textbf{SQL Server} lưu toàn bộ dữ liệu nghiệp vụ (tài khoản, truyện, chương, đánh giá, yêu cầu làm tác giả) và xử lý các nghiệp vụ nhiều bước, tìm kiếm, lọc và thống kê.
+    \item \textbf{Redis} dùng làm bộ nhớ đệm, bộ đếm lượt xem đồng bộ định kỳ xuống SQL Server, bản nháp, phiên đăng nhập và giới hạn tần suất; mất dữ liệu trên Redis không ảnh hưởng tới dữ liệu nghiệp vụ.
+\end{itemize}
