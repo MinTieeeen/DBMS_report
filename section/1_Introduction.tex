@@ -25,7 +25,7 @@ Hai nhóm yêu cầu trên cho thấy khó có một hệ quản trị cơ sở 
 
 Từ đó, đề tài đặt ra các câu hỏi cần trả lời:
 \begin{itemize}
-    \item Về bản chất, hệ quản trị cơ sở dữ liệu quan hệ và hệ lưu trữ khoá -- giá trị trong bộ nhớ khác nhau như thế nào trong cách lưu trữ, xử lý truy vấn, quản lý giao dịch, kiểm soát truy cập đồng thời và sao lưu, phục hồi dữ liệu?
+    \item Về bản chất, hệ quản trị cơ sở dữ liệu quan hệ và hệ lưu trữ khoá -- giá trị trong bộ nhớ khác nhau như thế nào trong cách lưu trữ, đánh chỉ mục, xử lý truy vấn, quản lý giao dịch và sao lưu, phục hồi dữ liệu?
     \item Những khác biệt đó có thể được kiểm chứng và định lượng ra sao thông qua các thực nghiệm có kịch bản tương đương trên hai hệ quản trị?
     \item Dựa trên kết quả thực nghiệm, nên phân chia vai trò giữa hai hệ quản trị như thế nào trong một ứng dụng cụ thể để tận dụng được ưu điểm của mỗi bên?
 \end{itemize}
@@ -59,7 +59,7 @@ Truy vấn tổng hợp (Aggregate) & Tính điểm đánh giá trung bình, t�
 \label{tab:intro-query-types}
 \end{table}
 
-\textbf{Thứ ba, đề tài tạo bối cảnh phù hợp để nghiên cứu và so sánh SQL với NoSQL.} Đặc trưng dữ liệu của nền tảng truyện, vừa có quan hệ chặt chẽ vừa có lưu lượng đọc lớn, cho phép mỗi hệ quản trị phát huy đúng thế mạnh của mình trong cùng một hệ thống. MS SQL Server là hệ quản trị cơ sở dữ liệu quan hệ được sử dụng rộng rãi trong doanh nghiệp, có bộ tối ưu truy vấn mạnh, cơ chế giao dịch và kiểm soát đồng thời hoàn chỉnh cùng hệ thống sao lưu, phục hồi đầy đủ~\cite{mssqldocs}. Redis là hệ lưu trữ khoá -- giá trị trong bộ nhớ phổ biến hàng đầu, thường được dùng làm bộ nhớ đệm nhờ tốc độ truy xuất rất cao~\cite{redisdocs}. Việc đặt hai hệ quản trị này vào cùng một ứng dụng giúp các kết quả nghiên cứu không chỉ mang tính lý thuyết mà còn gắn với những quyết định thiết kế cụ thể.
+\textbf{Thứ ba, đề tài tạo bối cảnh phù hợp để nghiên cứu và so sánh SQL với NoSQL.} Đặc trưng dữ liệu của nền tảng truyện, vừa có quan hệ chặt chẽ vừa có lưu lượng đọc lớn, cho phép mỗi hệ quản trị phát huy đúng thế mạnh của mình trong cùng một hệ thống. MS SQL Server là hệ quản trị cơ sở dữ liệu quan hệ được sử dụng rộng rãi trong doanh nghiệp, có hệ thống chỉ mục đa dạng, bộ tối ưu truy vấn mạnh, cơ chế giao dịch hoàn chỉnh cùng hệ thống sao lưu, phục hồi đầy đủ~\cite{mssqldocs}. Redis là hệ lưu trữ khoá -- giá trị trong bộ nhớ phổ biến hàng đầu, thường được dùng làm bộ nhớ đệm nhờ tốc độ truy xuất rất cao~\cite{redisdocs}. Việc đặt hai hệ quản trị này vào cùng một ứng dụng giúp các kết quả nghiên cứu không chỉ mang tính lý thuyết mà còn gắn với những quyết định thiết kế cụ thể.
 
 \textbf{Thứ tư, đề tài phù hợp với quy mô và thời gian thực hiện.} Phạm vi chức năng được lựa chọn tập trung vào các luồng nghiệp vụ cốt lõi, đủ để thể hiện các yêu cầu kỹ thuật của môn học nhưng vẫn khả thi để một nhóm năm thành viên hoàn thành trọn vẹn trong thời gian của học kỳ.
 
@@ -74,7 +74,7 @@ Truy vấn tổng hợp (Aggregate) & Tính điểm đánh giá trung bình, t�
 \subsubsection{Mục tiêu cụ thể}
 
 \begin{enumerate}
-    \item \textbf{Về nghiên cứu lý thuyết:} tìm hiểu kiến trúc tổng quan của MS SQL Server và Redis; phân tích cơ chế hoạt động của từng hệ quản trị trên năm chủ đề kỹ thuật gồm quản lý và lưu trữ dữ liệu, xử lý truy vấn, giao dịch, kiểm soát đồng thời, sao lưu và phục hồi dữ liệu.
+    \item \textbf{Về nghiên cứu lý thuyết:} tìm hiểu kiến trúc tổng quan của MS SQL Server và Redis; phân tích cơ chế hoạt động của từng hệ quản trị trên năm chủ đề kỹ thuật gồm quản lý và lưu trữ dữ liệu, cấu trúc chỉ mục, xử lý truy vấn, giao dịch, sao lưu và phục hồi dữ liệu.
     \item \textbf{Về thực nghiệm và so sánh:} với mỗi chủ đề, thiết kế dataset, cấu hình và kịch bản thực nghiệm tương đương trên cả hai hệ quản trị; thực hiện thực nghiệm, thu thập số liệu và minh chứng; lập bảng so sánh, giải thích nguyên nhân của sự khác biệt và liên hệ với nghiệp vụ của ứng dụng.
     \item \textbf{Về phân tích và thiết kế:} xác định yêu cầu chức năng của hệ thống; mô hình hoá dữ liệu bằng sơ đồ thực thể -- liên kết; thiết kế lược đồ quan hệ, khoá và ràng buộc trên MS SQL Server; thiết kế cách tổ chức khoá và cấu trúc dữ liệu bộ nhớ đệm trên Redis.
     \item \textbf{Về hiện thực ứng dụng:} xây dựng ứng dụng web Novelle theo mô hình client -- server, đáp ứng các yêu cầu chức năng đã đề ra (không tính đăng nhập, đăng xuất) và hỗ trợ đầy đủ tám loại thao tác dữ liệu; tích hợp Redis làm bộ nhớ đệm cho các dữ liệu được đọc thường xuyên.
@@ -121,13 +121,13 @@ Nhóm gồm năm thành viên, tương ứng với năm chủ đề kỹ thuật
 
 \begin{enumerate}
     \item \textbf{Quản lý và lưu trữ dữ liệu (Data Storage and Management):} cách dữ liệu được tổ chức, lưu trữ, quản lý và cập nhật trên đĩa đối với MS SQL Server và trong bộ nhớ đối với Redis.
+    \item \textbf{Cấu trúc chỉ mục (Indexing):} cách mỗi hệ quản trị tổ chức chỉ mục để tìm, lọc, sắp xếp và tìm kiếm toàn văn dữ liệu, cùng chi phí lưu trữ và chi phí ghi mà chỉ mục mang lại.
     \item \textbf{Xử lý truy vấn (Query Processing):} quá trình phân tích, tối ưu và thực thi truy vấn, kế hoạch thực thi và thời gian xử lý của các loại truy vấn khác nhau.
     \item \textbf{Giao dịch (Transaction):} cách mỗi hệ quản trị thực hiện một nhóm thao tác như một đơn vị công việc và bảo đảm tính nhất quán khi giao dịch thành công hoặc thất bại.
-    \item \textbf{Kiểm soát đồng thời (Concurrency Control):} cách xử lý tình huống nhiều người dùng cùng đọc và cập nhật một dữ liệu, và cách giải quyết xung đột.
     \item \textbf{Sao lưu và phục hồi dữ liệu (Data Backup and Recovery):} các cơ chế sao lưu, khôi phục và kiểm tra dữ liệu sau khi xảy ra sự cố.
 \end{enumerate}
 
-Chủ đề đánh chỉ mục (Indexing) không nằm trong phạm vi nghiên cứu của đề tài.
+Chủ đề kiểm soát đồng thời (Concurrency Control) không được nghiên cứu thành một chủ đề riêng.
 
 \subsubsection{Phạm vi về ứng dụng}
 
@@ -172,7 +172,7 @@ Việc dùng chung một quy trình giúp các chủ đề có cấu trúc nhấ
 \subsection{Ý nghĩa của đề tài}
 \label{subsec:intro-significance}
 
-\paragraph{Về mặt học thuật.} Đề tài giúp nhóm củng cố và đào sâu các kiến thức nền tảng của môn Hệ quản trị cơ sở dữ liệu như tổ chức lưu trữ, xử lý truy vấn, giao dịch, kiểm soát đồng thời, sao lưu và phục hồi. Thay vì chỉ tiếp cận ở mức khái niệm, các kiến thức này được kiểm chứng bằng thực nghiệm trên hai hệ quản trị có triết lý thiết kế khác biệt, qua đó giúp nhóm hiểu rõ \textit{vì sao} mỗi hệ quản trị được thiết kế như vậy và những đánh đổi đi kèm.
+\paragraph{Về mặt học thuật.} Đề tài giúp nhóm củng cố và đào sâu các kiến thức nền tảng của môn Hệ quản trị cơ sở dữ liệu như tổ chức lưu trữ, chỉ mục, xử lý truy vấn, giao dịch, sao lưu và phục hồi. Thay vì chỉ tiếp cận ở mức khái niệm, các kiến thức này được kiểm chứng bằng thực nghiệm trên hai hệ quản trị có triết lý thiết kế khác biệt, qua đó giúp nhóm hiểu rõ \textit{vì sao} mỗi hệ quản trị được thiết kế như vậy và những đánh đổi đi kèm.
 
 \paragraph{Về mặt thực tiễn.} Kết quả của đề tài là một ứng dụng web có thể vận hành, minh hoạ cho mô hình kết hợp cơ sở dữ liệu quan hệ với bộ nhớ đệm trong bộ nhớ, một mô hình phổ biến trong các hệ thống thực tế. Các phân tích và số liệu so sánh trong báo cáo có thể dùng làm tài liệu tham khảo khi cần lựa chọn hoặc kết hợp các hệ quản trị cơ sở dữ liệu cho những ứng dụng có đặc điểm tương tự, đặc biệt là các ứng dụng có lưu lượng đọc lớn.
 

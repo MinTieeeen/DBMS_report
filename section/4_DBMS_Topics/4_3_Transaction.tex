@@ -2,16 +2,299 @@
 \label{subsec:transaction}
 
 \subsubsection{Cơ sở lý thuyết}
-% TODO
+\label{subsubsec:tx-theory}
 
+Giao tác (\emph{transaction}) là một dãy thao tác đọc, ghi được hệ quản trị xem như \emph{một đơn vị công việc}: hoặc mọi thao tác đều có hiệu lực, hoặc không thao tác nào có hiệu lực~\cite{elmasri2016fundamentals,silberschatz2019database}. Một giao tác kết thúc bằng \emph{commit} (xác nhận) hoặc \emph{rollback} (huỷ bỏ). Các khái niệm chính:
+
+\begin{itemize}
+    \item \textbf{Tính chất ACID:} \emph{Atomicity} (nguyên tử: tất cả hoặc không gì cả), \emph{Consistency} (nhất quán: đưa cơ sở dữ liệu từ một trạng thái hợp lệ sang một trạng thái hợp lệ khác), \emph{Isolation} (cô lập: giao tác đang chạy không thấy kết quả dở dang của giao tác khác), \emph{Durability} (bền vững: kết quả đã commit không mất khi hệ thống gặp sự cố).
+    \item \textbf{Nhật ký giao tác:} mọi thay đổi được ghi vào nhật ký trước khi ghi xuống dữ liệu (\emph{write-ahead logging}); nhờ nhật ký, hệ quản trị có thể huỷ (\emph{undo}) giao tác bị lỗi và làm lại (\emph{redo}) giao tác đã commit sau sự cố.
+    \item \textbf{Lịch thao tác khả tuần tự:} khi nhiều giao tác chạy xen kẽ, kết quả được coi là đúng nếu tương đương với một thứ tự chạy lần lượt nào đó của chúng.
+    \item \textbf{Các bất thường khi chạy xen kẽ:} \emph{lost update} (hai giao tác cùng đọc rồi cùng ghi, một lần ghi bị mất), \emph{dirty read} (đọc dữ liệu chưa commit), \emph{non-repeatable read} (đọc lại một dòng thấy giá trị khác), \emph{phantom} (đọc lại một tập điều kiện thấy thêm dòng mới).
+    \item \textbf{Mức cô lập} (\emph{isolation level}) theo chuẩn SQL: \texttt{READ UNCOMMITTED}, \texttt{READ COMMITTED}, \texttt{REPEATABLE READ}, \texttt{SERIALIZABLE}; mức càng cao thì càng ít bất thường nhưng càng phải chờ nhau nhiều hơn.
+    \item \textbf{Khoá bi quan và kiểm soát lạc quan:} khoá bi quan (\emph{pessimistic}, giao thức khoá hai pha) bắt giao tác khác \emph{chờ} trước khi đụng vào dữ liệu đang bị khoá; kiểm soát lạc quan (\emph{optimistic}) cho mọi giao tác chạy, đến lúc ghi mới kiểm tra xung đột và \emph{huỷ} giao tác bị xung đột để chạy lại.
+    \item \textbf{Deadlock:} hai giao tác chờ khoá của nhau theo vòng; hệ quản trị phải phát hiện và huỷ một giao tác để phá vòng chờ.
+\end{itemize}
+
+% -------------------------------------------------------------------
 \subsubsection{Cơ chế xử lý giao tác trên MS SQL Server}
-% TODO
+\label{subsubsec:tx-mssql}
 
+\paragraph{Chế độ giao tác.} Mặc định SQL Server chạy ở chế độ \emph{autocommit}: mỗi câu lệnh là một giao tác riêng và tự commit khi kết thúc. Muốn gộp nhiều câu lệnh thành một đơn vị, ứng dụng mở giao tác tường minh bằng \texttt{BEGIN TRANSACTION} rồi kết thúc bằng \texttt{COMMIT} hoặc \texttt{ROLLBACK}; hoặc tắt autocommit từ phía trình điều khiển (JDBC, ODBC) và gọi \texttt{commit()}/\texttt{rollback()} từ ứng dụng, như cách Spring \texttt{@Transactional} làm~\cite{mssqldocs}. Một trigger luôn chạy trong cùng giao tác với câu lệnh đã kích hoạt nó.
+
+\paragraph{Nhật ký và khôi phục.} Mọi thay đổi được ghi vào nhật ký giao tác (\emph{transaction log}) trước; một giao tác chỉ được coi là commit khi bản ghi nhật ký của nó đã ghi xuống đĩa. Khi rollback, SQL Server đọc ngược nhật ký để huỷ từng thay đổi của giao tác, nên các bước đã ghi trước đó cũng được huỷ theo~\cite{mslearn_transaction_log}.
+
+\paragraph{Xử lý lỗi: \texttt{XACT\_ABORT} và \texttt{XACT\_STATE()}.} Lỗi bên trong giao tác \emph{không} tự động huỷ cả giao tác. Với \texttt{SET XACT\_ABORT OFF} (mặc định), phần lớn lỗi ràng buộc như vi phạm khoá duy nhất (lỗi 2627) chỉ huỷ \emph{câu lệnh} bị lỗi, giao tác vẫn mở và vẫn commit được. Với \texttt{SET XACT\_ABORT ON}, lỗi lúc chạy làm cả giao tác bị huỷ~\cite{mslearn_set_xact_abort}. Trong khối \texttt{CATCH}, hàm \texttt{XACT\_STATE()} cho biết trạng thái giao tác: \texttt{1} là còn commit được, \texttt{-1} là không commit được và bắt buộc phải rollback, \texttt{0} là không có giao tác nào đang mở~\cite{mslearn_xact_state}. Mọi thủ tục lưu trữ của Novelle dùng chung khuôn mẫu:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
+    -- các lệnh ghi
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+    THROW;
+END CATCH;
+\end{minted}
+
+\paragraph{Khoá.} SQL Server dùng khoá để bảo đảm tính cô lập~\cite{mslearn_locking_row_versioning}. Các kiểu khoá chính:
+
+\begin{itemize}
+    \item \textbf{Khoá chia sẻ (S):} khi đọc; nhiều giao tác có thể cùng giữ khoá S trên một tài nguyên.
+    \item \textbf{Khoá cập nhật (U):} khi đọc với ý định ghi sau đó; chỉ một giao tác giữ được khoá U, giúp tránh deadlock khi hai giao tác cùng đọc rồi cùng nâng lên khoá X.
+    \item \textbf{Khoá độc quyền (X):} khi ghi; giữ đến cuối giao tác, không tương thích với mọi khoá khác.
+    \item \textbf{Khoá khoảng khoá} (\emph{key-range lock}): khoá cả khoảng trống giữa các giá trị trong chỉ mục, ngăn giao tác khác chèn dòng mới vào khoảng đó (chống phantom).
+\end{itemize}
+
+Khoá có thể đặt ở mức dòng, trang hoặc bảng, và được nâng cấp (\emph{lock escalation}) khi một giao tác giữ quá nhiều khoá dòng. Ứng dụng có thể ép kiểu khoá bằng \emph{lock hint}: \texttt{UPDLOCK} đọc với khoá U, \texttt{HOLDLOCK} giữ khoá đến cuối giao tác với ngữ nghĩa \texttt{SERIALIZABLE} (có khoá khoảng khoá).
+
+\paragraph{Mức cô lập.} SQL Server hỗ trợ đủ bốn mức cô lập của chuẩn SQL, cộng thêm \texttt{SNAPSHOT} và tuỳ chọn \texttt{READ\_COMMITTED\_SNAPSHOT} dựa trên phiên bản dòng (\emph{row versioning}) trong \texttt{tempdb}: người đọc thấy phiên bản đã commit gần nhất thay vì phải chờ khoá của người ghi. Cơ sở dữ liệu \texttt{NovelleDB} tắt cả hai tuỳ chọn này, nên \texttt{READ COMMITTED} hoạt động bằng khoá: khoá S chỉ được giữ trong lúc đọc, còn khoá X được giữ đến cuối giao tác. Ở mức \texttt{REPEATABLE READ}, khoá S cũng được giữ đến cuối giao tác.
+
+\paragraph{Phát hiện deadlock.} Một tiến trình nền (\emph{lock monitor}) định kỳ tìm vòng chờ trong đồ thị chờ khoá. Khi gặp deadlock, SQL Server chọn một giao tác làm nạn nhân (\emph{victim}), thường là giao tác rẻ nhất để rollback, huỷ nó và trả lỗi \textbf{1205}; ứng dụng phải bắt lỗi này và chạy lại giao tác~\cite{mslearn_deadlocks}.
+
+% -------------------------------------------------------------------
 \subsubsection{Cơ chế xử lý giao tác trên Redis}
-% TODO
+\label{subsubsec:tx-redis}
 
+\paragraph{Mô hình thực thi đơn luồng.} Redis thực thi lệnh trên một luồng chính, lần lượt từng lệnh một~\cite{redisdocs}. Vì vậy mỗi lệnh đơn lẻ như \texttt{INCR}, \texttt{HINCRBY}, \texttt{SADD} luôn nguyên tử và không bao giờ bị lệnh khác chen vào giữa. Redis không có khoá, không có mức cô lập và không có deadlock; vấn đề chỉ phát sinh khi một nghiệp vụ cần \emph{nhiều} lệnh, vì lệnh của client khác có thể chen vào giữa các lệnh đó.
+
+\paragraph{\texttt{MULTI}/\texttt{EXEC}/\texttt{DISCARD}.} Sau lệnh \texttt{MULTI}, các lệnh tiếp theo không chạy ngay mà được xếp vào hàng đợi (Redis trả về \texttt{QUEUED}); lệnh \texttt{EXEC} chạy toàn bộ hàng đợi liên tục, không lệnh nào của client khác xen vào được; \texttt{DISCARD} bỏ hàng đợi~\cite{redis_transactions}. Có hai loại lỗi với hành vi khác nhau:
+
+\begin{itemize}
+    \item \textbf{Lỗi lúc xếp lệnh} (sai cú pháp, sai số tham số): Redis đánh dấu giao tác hỏng và \texttt{EXEC} trả về \texttt{EXECABORT}, không lệnh nào được chạy.
+    \item \textbf{Lỗi lúc chạy} (ví dụ \texttt{HSET} lên một key đang chứa String, lỗi \texttt{WRONGTYPE}): chỉ lệnh lỗi thất bại, các lệnh còn lại \emph{vẫn chạy}, và các lệnh đã chạy trước đó \emph{không} bị huỷ. Redis không có cơ chế rollback.
+\end{itemize}
+
+\paragraph{\texttt{WATCH}: kiểm soát lạc quan.} Lệnh \texttt{WATCH key} đánh dấu các key cần theo dõi trước \texttt{MULTI}. Nếu có client khác sửa một trong các key đó trước khi \texttt{EXEC} chạy, \texttt{EXEC} trả về \texttt{nil} và không lệnh nào được chạy; ứng dụng phải đọc lại và thử lại. Đây là cơ chế \emph{check-and-set}: không ai bị chặn, nhưng giao tác bị xung đột phải chạy lại.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+WATCH req:42
+HGET  req:42 Status              -- "PENDING"
+MULTI
+HSET  req:42 Status APPROVED
+HSET  user:7 Role AUTHOR
+EXEC                             -- nil nếu req:42 bị sửa sau WATCH
+\end{minted}
+
+\paragraph{Script Lua.} Lệnh \texttt{EVAL}/\texttt{EVALSHA} chạy một script Lua trên server; trong lúc script chạy, không lệnh nào khác được thực thi~\cite{redis_lua_scripting}. Script có thể đọc dữ liệu, rẽ nhánh theo kết quả và ghi trong cùng một bước nguyên tử, điều mà \texttt{MULTI}/\texttt{EXEC} không làm được (các lệnh trong hàng đợi không đọc được kết quả của nhau). Tuy nhiên, script cũng \emph{không} rollback: nếu một lệnh trong script lỗi, các lệnh đã chạy trước đó vẫn giữ nguyên. Muốn có ``tất cả hoặc không gì cả'', script phải kiểm tra mọi điều kiện có thể gây lỗi trước lệnh ghi đầu tiên.
+
+\paragraph{Tính bền vững.} Kết quả của \texttt{EXEC} chỉ bền vững theo cấu hình lưu trữ: với AOF và \texttt{appendfsync everysec}, có thể mất khoảng một giây dữ liệu khi máy gặp sự cố (xem mục~\ref{subsec:backup-recovery}); với RDB, mất phần dữ liệu từ lần snapshot gần nhất~\cite{redis_persistence}.
+
+% -------------------------------------------------------------------
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
-% TODO
+\label{subsubsec:tx-experiment}
 
+\paragraph{Môi trường và dữ liệu.}
+\begin{itemize}
+    \item SQL Server 2019 Express trên AWS RDS (db.t3.micro); Redis Stack 7.4.2 chạy trong Docker trên máy cá nhân.
+    \item Các kịch bản dùng chính nghiệp vụ của Novelle: duyệt yêu cầu làm tác giả (thủ tục lưu trữ \texttt{sp\_Approve\-Author\-Request} ghi ba bảng \texttt{AuthorRequest}, \texttt{User}, \texttt{Author}) và đánh giá truyện (bảng \texttt{Rating}, trigger \texttt{trg\_Rating} tính lại \texttt{Story.RatingAvg}).
+    \item Trên SQL Server, dữ liệu được sao chép sang các bảng thử nghiệm riêng, có đủ các ràng buộc của thiết kế: khoá chính \texttt{PK\_Author}, ràng buộc duy nhất \texttt{UQ\_Author\_PenName} trên bút danh, chỉ mục duy nhất có lọc cho yêu cầu đang chờ duyệt, và bản sao của \texttt{trg\_Rating}. Trên Redis, cùng dữ liệu được biểu diễn bằng Hash (\texttt{req:<id>}, \texttt{user:<id>}, \texttt{author:<id>}, \texttt{story:<id>}) và Set (\texttt{pennames}: các bút danh đã dùng).
+    \item Mỗi kịch bản kiểm tra quy tắc nghiệp vụ \textbf{RB13}: một người dùng có vai trò \texttt{AUTHOR} khi và chỉ khi có hồ sơ tác giả trỏ tới một yêu cầu đã được duyệt của chính người đó.
+    \item Độ trễ đo ở client gồm cả thời gian mạng, mà RDS ở xa (khoảng 90~ms mỗi vòng) còn Redis chạy cục bộ (khoảng 0,1~ms). Vì vậy hai DBMS được so sánh chủ yếu bằng \emph{tính đúng} của kết quả (số lần duyệt, số bước còn lại sau lỗi, số deadlock, số lần thử lại) và thời gian xử lý phía server.
+    \item Để dễ đọc, tên bảng và tên key trong phần này được viết rút gọn.
+\end{itemize}
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản T1 -- Hai quản trị viên duyệt cùng lúc.}
+
+\textbf{Mục đích:} kiểm tra cơ chế nào bảo đảm một yêu cầu làm tác giả chỉ được duyệt \emph{đúng một lần} khi hai quản trị viên bấm duyệt cùng lúc. Có hai trường hợp: (a) cả hai cùng duyệt một yêu cầu; (b) hai yêu cầu khác nhau nhưng đề xuất cùng một bút danh. Mỗi phiên dừng 300~ms giữa bước kiểm tra và bước ghi, để hai phiên chắc chắn chạy chồng lên nhau.
+
+\textbf{SQL Server:} so sánh bốn biến thể: đọc rồi ghi ở \texttt{READ COMMITTED} không có lock hint; đọc với \texttt{UPDLOCK, HOLDLOCK} như thủ tục thật (khoá bi quan); kiểm tra ngay trong câu ghi bằng \texttt{UPDATE \ldots{} WHERE Status = 'PENDING'} rồi xem \texttt{@@ROWCOUNT}; và đọc rồi ghi ở \texttt{REPEATABLE READ}. Với trường hợp (b), có thêm một biến thể bỏ ràng buộc \texttt{UQ\_Author\_PenName}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+-- Khoá bi quan: admin thứ hai phải chờ ở câu SELECT
+BEGIN TRANSACTION;
+SELECT @UserId = UserId, @PenName = ProposedPenName, @Status = Status
+FROM AuthorRequest WITH (UPDLOCK, HOLDLOCK) WHERE RequestId = @RequestId;
+IF @Status <> 'PENDING' THROW 50001, N'Author request was already processed.', 1;
+IF EXISTS (SELECT 1 FROM Author WITH (UPDLOCK, HOLDLOCK) WHERE PenName = @PenName)
+    THROW 50003, N'Pen name is already in use.', 1;
+UPDATE AuthorRequest SET Status = 'APPROVED', ReviewedBy = @AdminId WHERE RequestId = @RequestId;
+UPDATE [User] SET Role = 'AUTHOR' WHERE UserId = @UserId;
+INSERT INTO Author (UserId, PenName, ApprovedRequestId) VALUES (@UserId, @PenName, @RequestId);
+COMMIT TRANSACTION;
+
+-- Kiểm tra trong câu ghi: admin thứ hai cập nhật được 0 dòng
+UPDATE AuthorRequest SET Status = 'APPROVED', ReviewedBy = @AdminId
+WHERE RequestId = @RequestId AND Status = 'PENDING';
+IF @@ROWCOUNT = 0 THROW 50001, N'Author request was already processed.', 1;
+\end{minted}
+
+\textbf{Redis:} so sánh ba biến thể: đọc bằng \texttt{HGET}/\texttt{SISMEMBER} rồi ghi bằng \texttt{HSET}/\texttt{SADD} từ client; \texttt{WATCH} các key liên quan rồi ghi trong \texttt{MULTI}/\texttt{EXEC}, thử lại khi \texttt{EXEC} bị huỷ (kiểm soát lạc quan); và một script Lua làm cả kiểm tra lẫn ghi.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{lua}
+local status = redis.call('HGET', KEYS[1], 'Status')
+if status ~= 'PENDING' then return {0, 'ALREADY_PROCESSED'} end
+local pen = redis.call('HGET', KEYS[1], 'ProposedPenName')
+if redis.call('SISMEMBER', KEYS[4], pen) == 1 then return {0, 'PEN_NAME_TAKEN'} end
+redis.call('HSET', KEYS[1], 'Status', 'APPROVED', 'ReviewedBy', ARGV[1])
+redis.call('HSET', KEYS[2], 'Role', 'AUTHOR')
+redis.call('HSET', KEYS[3], 'PenName', pen, 'ApprovedRequestId', ARGV[2])
+redis.call('SADD', KEYS[4], pen)
+return {1, 'APPROVED'}
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{4.6cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Trường hợp -- biến thể} & \textbf{SQL Server} & \textbf{Redis} \\ \hline
+(a) Đọc rồi ghi & 1 lần duyệt; admin 2 bị \texttt{PK\_Author} chặn (lỗi 2627) & \textbf{2 lần duyệt}, người duyệt bị ghi đè \\ \hline
+(a) Khoá bi quan / \texttt{WATCH} & 1 lần duyệt; admin 2 chờ khoá 306~ms & 1 lần duyệt; admin 2 thử lại 1 lần \\ \hline
+(a) Kiểm tra trong câu ghi / Lua & 1 lần duyệt; admin 2 chờ 307~ms & 1 lần duyệt \\ \hline
+(a) \texttt{REPEATABLE READ} & 1 lần duyệt; \textbf{1 deadlock} (lỗi 1205) & -- \\ \hline
+(b) Đọc rồi ghi & 1 lần duyệt; \texttt{UQ\_Author\_PenName} chặn & \textbf{2 lần duyệt, trùng bút danh} \\ \hline
+(b) Đọc rồi ghi, bỏ ràng buộc duy nhất & \textbf{2 lần duyệt, trùng bút danh} & -- \\ \hline
+(b) Khoá bi quan / \texttt{WATCH} & 1 lần duyệt; admin 2 chờ khoá 306~ms & 1 lần duyệt; admin 2 thử lại 1 lần \\ \hline
+(b) Kiểm tra trong câu ghi / Lua & 1 lần duyệt & 1 lần duyệt \\ \hline
+\end{tabularx}
+\caption{Kết quả kịch bản T1 (đúng là 1 lần duyệt)}
+\label{tab:tx-t1}
+\end{table}
+
+\textbf{Nhận xét:} khi đọc rồi ghi mà không khoá, logic của cả hai DBMS đều sai như nhau: cả hai quản trị viên đều đọc thấy yêu cầu đang chờ duyệt. SQL Server vẫn cho kết quả đúng là nhờ khoá chính và ràng buộc duy nhất chặn lại ở bước ghi; khi bỏ ràng buộc duy nhất, SQL Server cũng ghi trùng bút danh như Redis. Khoá bi quan bắt người đến sau \emph{chờ} đúng bằng thời gian người trước giữ khoá (khoảng 300~ms), còn \texttt{WATCH} không chặn ai mà \emph{huỷ} \texttt{EXEC} của người đến sau để client thử lại. Mức \texttt{REPEATABLE READ} không an toàn hơn: hai phiên cùng giữ khoá S rồi cùng xin nâng lên khoá X nên rơi vào deadlock; cách đúng là đọc với \texttt{UPDLOCK} hoặc kiểm tra ngay trong câu \texttt{UPDATE}. Cả hai DBMS đều không vi phạm RB13 ở mọi biến thể: mỗi lần duyệt đều ghi đủ ba bước.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản T2 -- Lỗi xảy ra giữa giao tác.}
+
+\textbf{Mục đích:} kiểm tra tính nguyên tử khi một nghiệp vụ nhiều bước gặp lỗi giữa chừng. Việc duyệt tác giả gồm ba bước ghi: (1) đổi trạng thái \texttt{AuthorRequest}, (2) đổi \texttt{User.Role} thành \texttt{AUTHOR}, (3) tạo dòng \texttt{Author}; bước 3 được cố ý làm cho lỗi. Kết quả đúng là \textbf{0/3 bước} còn lại và không vi phạm RB13.
+
+\textbf{SQL Server:} bút danh đề xuất đã có người dùng nên \texttt{INSERT Author} vi phạm \texttt{UQ\_Author\_PenName} (lỗi 2627). So sánh bốn biến thể: autocommit; giao tác mở từ ứng dụng (tắt autocommit, client gọi \texttt{rollback()}); \texttt{XACT\_ABORT ON} với \texttt{TRY}/\texttt{CATCH} như các thủ tục của Novelle; và \texttt{XACT\_ABORT OFF}, bắt lỗi xong vẫn \texttt{COMMIT}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SET XACT_ABORT OFF;
+BEGIN TRANSACTION;
+UPDATE AuthorRequest SET Status = 'APPROVED', ReviewedBy = @AdminId WHERE RequestId = @RequestId;
+UPDATE [User] SET Role = 'AUTHOR' WHERE UserId = @UserId;
+BEGIN TRY
+    INSERT INTO Author (UserId, PenName, ApprovedRequestId) VALUES (@UserId, @PenName, @RequestId);
+END TRY
+BEGIN CATCH
+    SET @XactState = XACT_STATE();    -- = 1: giao tác vẫn commit được
+END CATCH;
+COMMIT TRANSACTION;                    -- giữ lại bước 1 và 2
+\end{minted}
+
+\textbf{Redis:} Redis không có ràng buộc duy nhất, nên lỗi được tạo bằng cách cho key \texttt{author:<id>} đang chứa một String, làm \texttt{HSET} ở bước 3 báo lỗi \texttt{WRONGTYPE} lúc chạy. So sánh các biến thể: gửi ba lệnh riêng lẻ; \texttt{MULTI}/\texttt{EXEC} với lỗi lúc chạy; \texttt{MULTI}/\texttt{EXEC} với lỗi cú pháp lúc xếp lệnh; \texttt{DISCARD} khi ứng dụng phát hiện lỗi trước \texttt{EXEC}; script Lua ghi ba bước; script Lua kiểm tra hết rồi mới ghi; và bù trừ (\emph{compensation}): client tự ghi ngược lại sau khi gặp lỗi.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+MULTI
+HSET req:42 Status APPROVED ReviewedBy 1    -> QUEUED
+HSET user:7 Role AUTHOR                     -> QUEUED
+HSET author:7 PenName "..."                 -> QUEUED
+EXEC  -> 1) (integer) 0   2) (integer) 0   3) WRONGTYPE ...
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{Số bước còn lại} & \textbf{Vi phạm RB13} \\ \hline
+SQL Server & Autocommit & 2/3 & 1 \\ \hline
+SQL Server & Giao tác từ ứng dụng, \texttt{rollback()} & 0/3 & 0 \\ \hline
+SQL Server & \texttt{XACT\_ABORT ON} + \texttt{TRY}/\texttt{CATCH} (\texttt{XACT\_STATE() = -1}) & 0/3 & 0 \\ \hline
+SQL Server & \texttt{XACT\_ABORT OFF}, vẫn \texttt{COMMIT} (\texttt{XACT\_STATE() = 1}) & 2/3 & 1 \\ \hline
+Redis & Ba lệnh riêng lẻ & 2/3 & 1 \\ \hline
+Redis & \texttt{MULTI}/\texttt{EXEC}, lỗi lúc chạy & 2/3 & 1 \\ \hline
+Redis & \texttt{MULTI}/\texttt{EXEC}, lỗi lúc xếp lệnh (\texttt{EXECABORT}) & 0/3 & 0 \\ \hline
+Redis & \texttt{DISCARD} & 0/3 & 0 \\ \hline
+Redis & Lua, lỗi lúc chạy & 2/3 & 1 \\ \hline
+Redis & Lua kiểm tra trước khi ghi & 0/3 & 0 \\ \hline
+Redis & Bù trừ từ client & 0/3 & 0 \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản T2 (đúng là 0/3 bước)}
+\label{tab:tx-t2}
+\end{table}
+
+\textbf{Nhận xét:} SQL Server huỷ được cả ba bước nhờ nhật ký giao tác, nhưng chỉ khi giao tác thực sự được rollback: có \texttt{BEGIN TRANSACTION} mà \texttt{XACT\_ABORT OFF} thì lỗi 2627 chỉ huỷ câu lệnh lỗi, giao tác vẫn commit được và kết quả giống hệt khi không có giao tác. Với Redis, \texttt{MULTI}/\texttt{EXEC} và Lua chỉ bảo đảm không lệnh nào của client khác chen vào giữa, \emph{không} bảo đảm rollback: lỗi lúc chạy để lại 2/3 bước. Redis chỉ cho kết quả ``tất cả hoặc không gì cả'' khi lỗi được phát hiện \emph{trước} lệnh ghi đầu tiên (\texttt{EXECABORT}, \texttt{DISCARD}, Lua kiểm tra trước). Bù trừ từ client đưa dữ liệu về như cũ nhưng không nguyên tử: trong khoảng thời gian giữa lỗi và lúc bù trừ, client khác vẫn thấy người dùng đã có vai trò \texttt{AUTHOR}.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản T3 -- Giao tác khi tải tăng.}
+
+\textbf{Mục đích:} kiểm tra hiệu năng và tính đúng của giao tác khi nhiều người dùng cùng ghi vào một dòng. Có 200 lượt đánh giá cho cùng một truyện, mỗi lượt của một người dùng khác nhau, điểm 1--5 lần lượt (trung bình đúng là 3,00), được chia đều cho 1, 10, 50 và 100 client đồng thời. Mỗi mức tải có giới hạn 60~giây; deadlock (SQL Server) hoặc \texttt{EXEC} bị huỷ (Redis) đều được thử lại.
+
+\textbf{SQL Server:} so sánh thiết kế hiện tại của Novelle (chỉ \texttt{INSERT Rating}, trigger \texttt{trg\_Rating} tính lại \texttt{AVG}/\texttt{COUNT} từ toàn bộ đánh giá của truyện) với cách cộng dồn: một giao tác gồm \texttt{INSERT} và một câu \texttt{UPDATE} tăng tổng điểm và số lượt.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+BEGIN TRANSACTION;
+INSERT INTO Rating (UserId, StoryId, Score) VALUES (@UserId, @StoryId, @Score);
+UPDATE Story
+SET RatingSum   = RatingSum + @Score,
+    RatingCount = RatingCount + 1,
+    RatingAvg   = CAST((RatingSum + @Score) * 1.0 / (RatingCount + 1) AS DECIMAL(3,2))
+WHERE StoryId = @StoryId;
+COMMIT TRANSACTION;
+\end{minted}
+
+\textbf{Redis:} so sánh script Lua cộng dồn với \texttt{WATCH} trên Hash của truyện kèm \texttt{MULTI}/\texttt{EXEC} và thử lại.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{lua}
+if redis.call('HSETNX', KEYS[2], ARGV[1], ARGV[2]) == 0 then return {0, 'ALREADY_RATED'} end
+local sum   = redis.call('HINCRBY', KEYS[1], 'RatingSum', ARGV[2])
+local count = redis.call('HINCRBY', KEYS[1], 'RatingCount', 1)
+redis.call('HSET', KEYS[1], 'RatingAvg', string.format('%.2f', sum / count))
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{1 client} & \textbf{10 client} & \textbf{50 client} & \textbf{100 client} \\ \hline
+SQL Server & Trigger tính lại & 4,6 & 0,8 & 0,15 & 0,08 \\ \hline
+SQL Server & Cộng dồn & 6,5 & 46 & 113 & 216 \\ \hline
+Redis & Lua cộng dồn & 4\,775 & 4\,059 & 1\,396 & 1\,218 \\ \hline
+Redis & \texttt{WATCH} + thử lại & 3\,587 & 441 & 160 & 107 \\ \hline
+\end{tabular}
+\caption{Thông lượng kịch bản T3 (lượt đánh giá thành công mỗi giây, đo ở client)}
+\label{tab:tx-t3-throughput}
+\end{table}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{1 client} & \textbf{10 client} & \textbf{50 client} & \textbf{100 client} \\ \hline
+SQL Server & Trigger tính lại: số deadlock & 0 & 433 & 466 & 463 \\ \hline
+SQL Server & Trigger tính lại: lượt chưa kịp chạy / lỗi & 0 / 0 & 136 / 16 & 142 / 48 & 97 / 97 \\ \hline
+SQL Server & Cộng dồn: số deadlock & 0 & 0 & 0 & 0 \\ \hline
+SQL Server & Cộng dồn: thời gian server p50 (ms) & 2,4 & 3,1 & 22 & 74 \\ \hline
+Redis & Lua: số lần thử lại & 0 & 0 & 0 & 0 \\ \hline
+Redis & Lua: thời gian server (micro giây/lượt) & 44 & 25 & 49 & 36 \\ \hline
+Redis & \texttt{WATCH}: số lần thử lại & 0 & 739 & 2\,519 & 3\,599 \\ \hline
+Redis & \texttt{WATCH}: thời gian server (micro giây/lượt) & 8 & 37 & 73 & 108 \\ \hline
+\end{tabular}
+\caption{Xung đột và thời gian phía server của kịch bản T3}
+\label{tab:tx-t3-conflict}
+\end{table}
+
+\textbf{Nhận xét:} ở mọi mức tải, \texttt{RatingCount} và \texttt{RatingAvg} cuối cùng đều khớp với giá trị tính lại từ toàn bộ đánh giá, nên cả bốn biến thể đều đúng; khác biệt nằm ở chi phí. Thiết kế hiện tại với \texttt{trg\_Rating} sụp đổ ngay từ 10 client: thông lượng giảm từ 4,6 xuống dưới 1 lượt mỗi giây với hơn 400 deadlock, và phần lớn lượt đánh giá không kịp chạy trong 60~giây. Nguyên nhân là trigger vừa giữ khoá X trên dòng \texttt{Story}, vừa phải đọc toàn bộ đánh giá của truyện, trong đó có các đánh giá chưa commit của phiên khác, nên các phiên chờ nhau theo vòng. Cách cộng dồn không đọc lại đánh giá và luôn khoá theo cùng một thứ tự, nên các phiên chỉ xếp hàng chờ khoá dòng \texttt{Story}, không có deadlock, và thông lượng tăng tới 216 lượt mỗi giây ở 100 client. Trên Redis, Lua không bao giờ xung đột vì mỗi script chạy trọn vẹn trước script kế tiếp; \texttt{WATCH} giảm nhanh khi tranh chấp tăng, vì mỗi lần \texttt{EXEC} thành công lại làm hỏng mọi \texttt{WATCH} đang chờ khác, dẫn tới hàng nghìn lần thử lại. Về thời gian phía server, SQL Server mất vài đến vài chục mili giây cho mỗi lượt cộng dồn (tăng theo thời gian chờ khoá), còn Redis chỉ mất vài chục micro giây.
+
+% -------------------------------------------------------------------
 \subsubsection{So sánh và đánh giá}
-% TODO
+\label{subsubsec:tx-compare}
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{3.2cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Tiêu chí} & \textbf{MS SQL Server} & \textbf{Redis} \\ \hline
+Tính nguyên tử & Rollback đầy đủ nhờ nhật ký giao tác, với điều kiện bật \texttt{XACT\_ABORT} hoặc rollback từ ứng dụng & Không có rollback; chỉ ``tất cả hoặc không gì cả'' khi lỗi được phát hiện trước lệnh ghi đầu tiên \\ \hline
+Tính nhất quán & Khoá chính, ràng buộc duy nhất, khoá ngoại chặn dữ liệu sai ở bước ghi & Không có ràng buộc; mọi bất biến phải nằm trong code (Lua, Set đóng vai trò chỉ mục duy nhất) \\ \hline
+Tính cô lập & Khoá S/U/X, khoá khoảng khoá, bốn mức cô lập; có thể deadlock & Đơn luồng: mỗi lệnh, mỗi \texttt{EXEC}, mỗi script Lua chạy trọn vẹn; không có deadlock \\ \hline
+Khi có tranh chấp & Khoá bi quan: người đến sau chờ; deadlock được phát hiện và huỷ tự động (lỗi 1205) & \texttt{WATCH}: người đến sau bị huỷ và phải tự thử lại; Lua: không xung đột \\ \hline
+Tính bền vững & Commit chỉ trả về sau khi nhật ký đã ghi xuống đĩa & Phụ thuộc cấu hình AOF/RDB, có thể mất khoảng một giây dữ liệu \\ \hline
+Hiệu năng & Mili giây mỗi giao tác; giảm mạnh nếu thiết kế gây deadlock & Micro giây mỗi giao tác; \texttt{WATCH} giảm mạnh khi tranh chấp cao \\ \hline
+\end{tabularx}
+\caption{So sánh cơ chế xử lý giao tác của SQL Server và Redis}
+\label{tab:tx-compare}
+\end{table}
+
+\paragraph{Kết luận cho hệ thống Novelle.}
+\begin{itemize}
+    \item \textbf{SQL Server là nơi thực hiện các nghiệp vụ cần đúng tuyệt đối:} duyệt yêu cầu làm tác giả, tạo chương, đánh giá. Các nghiệp vụ này cần rollback khi lỗi và cần ràng buộc làm lớp bảo vệ cuối cùng; khuôn mẫu \texttt{XACT\_ABORT ON} với \texttt{TRY}/\texttt{CATCH} và khoá \texttt{UPDLOCK, HOLDLOCK} của các thủ tục hiện tại đã được kiểm chứng là đúng.
+    \item \textbf{Redis dùng cho các bộ đếm ghi với tần suất cao} như lượt xem: thay đổi bằng một lệnh nguyên tử hoặc một script Lua, không cần rollback, và mất một phần nhỏ dữ liệu khi có sự cố là chấp nhận được vì SQL Server vẫn là nguồn dữ liệu gốc. Trên Redis nên dùng Lua thay cho \texttt{WATCH} ở những key có tranh chấp cao.
+    \item \textbf{Đề xuất cho backend:} thay việc tính lại toàn bộ trong \texttt{trg\_Rating} bằng cộng dồn trong cùng giao tác, để tránh deadlock khi nhiều người cùng đánh giá một truyện.
+\end{itemize}
