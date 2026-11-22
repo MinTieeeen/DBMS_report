@@ -1,8 +1,5 @@
 \subsection{Xử lý giao tác (Transaction)}
 \label{subsec:transaction}
-
-Trong một ứng dụng thực tế, rất nhiều nghiệp vụ không chỉ gồm một thao tác ghi đơn lẻ. Chẳng hạn, khi quản trị viên duyệt một yêu cầu làm tác giả trên Novelle, hệ thống phải đồng thời đổi trạng thái yêu cầu, đổi vai trò của tài khoản và tạo hồ sơ tác giả. Nếu một trong ba bước này thất bại mà hai bước còn lại vẫn được ghi, dữ liệu sẽ rơi vào trạng thái mâu thuẫn. Bên cạnh đó, nếu hai quản trị viên cùng duyệt một yêu cầu vào cùng thời điểm, hệ thống cũng phải bảo đảm yêu cầu đó chỉ được xử lý đúng một lần. Cơ chế giao tác chính là công cụ mà hệ quản trị cung cấp để giải quyết những vấn đề như vậy. Mục này trình bày cơ sở lý thuyết về giao tác, phân tích cách SQL Server và Redis hiện thực cơ chế này, sau đó kiểm chứng qua ba kịch bản dựa trên chính các nghiệp vụ của Novelle.
-
 \subsubsection{Cơ sở lý thuyết}
 \label{subsubsec:tx-theory}
 
@@ -17,8 +14,6 @@ Trong khi đó, tính cô lập liên quan đến tình huống nhiều giao tá
 % -------------------------------------------------------------------
 \subsubsection{Cơ chế xử lý giao tác trên MS SQL Server}
 \label{subsubsec:tx-mssql}
-
-Dựa trên những khái niệm vừa trình bày, phần này phân tích cách SQL Server hiện thực giao tác trong thực tế, từ cách mở và kết thúc một giao tác, cách xử lý lỗi, cho đến cơ chế khoá và phát hiện deadlock.
 
 \paragraph{Chế độ giao tác.} Mặc định SQL Server chạy ở chế độ \emph{autocommit}: mỗi câu lệnh là một giao tác riêng và tự commit khi kết thúc. Muốn gộp nhiều câu lệnh thành một đơn vị, ứng dụng mở giao tác tường minh bằng \texttt{BEGIN TRANSACTION} rồi kết thúc bằng \texttt{COMMIT} hoặc \texttt{ROLLBACK}; hoặc tắt autocommit từ phía trình điều khiển (JDBC, ODBC) và gọi \texttt{commit()}/\texttt{rollback()} từ ứng dụng, như cách Spring \texttt{@Transactional} làm. Một trigger luôn chạy trong cùng giao tác với câu lệnh đã kích hoạt nó.
 
@@ -87,21 +82,8 @@ EXEC                             -- nil nếu req:42 bị sửa sau WATCH
 % -------------------------------------------------------------------
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
 \label{subsubsec:tx-experiment}
-
-Để kiểm chứng những khác biệt về mặt lý thuyết ở trên, nhóm thiết kế ba kịch bản thực nghiệm. Thay vì dùng các ví dụ chung chung, mỗi kịch bản đều được xây dựng từ một nghiệp vụ có thật của Novelle, nhờ đó kết quả thu được có thể áp dụng trực tiếp vào ứng dụng.
-
-\paragraph{Môi trường và dữ liệu.}
-\begin{itemize}
-    \item SQL Server 2019 Express trên AWS RDS (db.t3.micro); Redis Stack 7.4.2 chạy trong Docker trên máy cá nhân.
-    \item Các kịch bản dùng chính nghiệp vụ của Novelle: duyệt yêu cầu làm tác giả (thủ tục lưu trữ \texttt{sp\_Approve\-Author\-Request} ghi ba bảng \texttt{AuthorRequest}, \texttt{User}, \texttt{Author}) và đánh giá truyện (bảng \texttt{Rating}, trigger \texttt{trg\_Rating} tính lại \texttt{Story.RatingAvg}).
-    \item Trên SQL Server, dữ liệu được sao chép sang các bảng thử nghiệm riêng, có đủ các ràng buộc của thiết kế: khoá chính \texttt{PK\_Author}, ràng buộc duy nhất \texttt{UQ\_Author\_PenName} trên bút danh, chỉ mục duy nhất có lọc cho yêu cầu đang chờ duyệt, và bản sao của \texttt{trg\_Rating}. Trên Redis, cùng dữ liệu được biểu diễn bằng Hash (\texttt{req:<id>}, \texttt{user:<id>}, \texttt{author:<id>}, \texttt{story:<id>}) và Set (\texttt{pennames}: các bút danh đã dùng).
-    \item Mỗi kịch bản kiểm tra quy tắc nghiệp vụ \textbf{RB13}: một người dùng có vai trò \texttt{AUTHOR} khi và chỉ khi có hồ sơ tác giả trỏ tới một yêu cầu đã được duyệt của chính người đó.
-    \item Độ trễ đo ở client gồm cả thời gian mạng, mà RDS ở xa (khoảng 90~ms mỗi vòng) còn Redis chạy cục bộ (khoảng 0,1~ms). Vì vậy hai DBMS được so sánh chủ yếu bằng \emph{tính đúng} của kết quả (số lần duyệt, số bước còn lại sau lỗi, số deadlock, số lần thử lại) và thời gian xử lý phía server.
-    \item Để dễ đọc, tên bảng và tên key trong phần này được viết rút gọn.
-\end{itemize}
-
 % -------------------------------------------------------------------
-\paragraph{Kịch bản T1 -- Hai quản trị viên duyệt cùng lúc.}
+\paragraph{Kịch bản 1 -- Hai quản trị viên duyệt cùng lúc.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra cơ chế nào bảo đảm một yêu cầu làm tác giả chỉ được duyệt \emph{đúng một lần} khi hai quản trị viên bấm duyệt cùng lúc. Có hai trường hợp: (a) cả hai cùng duyệt một yêu cầu; (b) hai yêu cầu khác nhau nhưng đề xuất cùng một bút danh. Mỗi phiên dừng 300~ms giữa bước kiểm tra và bước ghi, để hai phiên chắc chắn chạy chồng lên nhau.
 
@@ -154,14 +136,14 @@ return {1, 'APPROVED'}
 (b) Khoá bi quan / \texttt{WATCH} & 1 lần duyệt; admin 2 chờ khoá 306~ms & 1 lần duyệt; admin 2 thử lại 1 lần \\ \hline
 (b) Kiểm tra trong câu ghi / Lua & 1 lần duyệt & 1 lần duyệt \\ \hline
 \end{tabularx}
-\caption{Kết quả kịch bản T1 (đúng là 1 lần duyệt)}
+\caption{Kết quả kịch bản 1 (đúng là 1 lần duyệt)}
 \label{tab:tx-t1}
 \end{table}
 
 \textbf{Nhận xét.} Qua kết quả trên, có thể thấy khi đọc rồi ghi mà không khoá, logic của cả hai DBMS đều sai như nhau: cả hai quản trị viên đều đọc thấy yêu cầu đang chờ duyệt. SQL Server vẫn cho kết quả đúng là nhờ khoá chính và ràng buộc duy nhất chặn lại ở bước ghi; khi bỏ ràng buộc duy nhất, SQL Server cũng ghi trùng bút danh như Redis. Khoá bi quan bắt người đến sau \emph{chờ} đúng bằng thời gian người trước giữ khoá (khoảng 300~ms), còn \texttt{WATCH} không chặn ai mà \emph{huỷ} \texttt{EXEC} của người đến sau để client thử lại. Mức \texttt{REPEATABLE READ} không an toàn hơn: hai phiên cùng giữ khoá S rồi cùng xin nâng lên khoá X nên rơi vào deadlock; cách đúng là đọc với \texttt{UPDLOCK} hoặc kiểm tra ngay trong câu \texttt{UPDATE}. Cả hai DBMS đều không vi phạm RB13 ở mọi biến thể: mỗi lần duyệt đều ghi đủ ba bước.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản T2 -- Lỗi xảy ra giữa giao tác.}
+\paragraph{Kịch bản 2 -- Lỗi xảy ra giữa giao tác.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra tính nguyên tử khi một nghiệp vụ nhiều bước gặp lỗi giữa chừng. Việc duyệt tác giả gồm ba bước ghi: (1) đổi trạng thái \texttt{AuthorRequest}, (2) đổi \texttt{User.Role} thành \texttt{AUTHOR}, (3) tạo dòng \texttt{Author}; bước 3 được cố ý làm cho lỗi. Kết quả đúng là \textbf{0/3 bước} còn lại và không vi phạm RB13.
 
@@ -208,14 +190,14 @@ Redis & Lua, lỗi lúc chạy & 2/3 & 1 \\ \hline
 Redis & Lua kiểm tra trước khi ghi & 0/3 & 0 \\ \hline
 Redis & Bù trừ từ client & 0/3 & 0 \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản T2 (đúng là 0/3 bước)}
+\caption{Kết quả kịch bản 2 (đúng là 0/3 bước)}
 \label{tab:tx-t2}
 \end{table}
 
 \textbf{Nhận xét.} Kết quả cho thấy SQL Server huỷ được cả ba bước nhờ nhật ký giao tác, nhưng chỉ khi giao tác thực sự được rollback: có \texttt{BEGIN TRANSACTION} mà \texttt{XACT\_ABORT OFF} thì lỗi 2627 chỉ huỷ câu lệnh lỗi, giao tác vẫn commit được và kết quả giống hệt khi không có giao tác. Với Redis, \texttt{MULTI}/\texttt{EXEC} và Lua chỉ bảo đảm không lệnh nào của client khác chen vào giữa, \emph{không} bảo đảm rollback: lỗi lúc chạy để lại 2/3 bước. Redis chỉ cho kết quả ``tất cả hoặc không gì cả'' khi lỗi được phát hiện \emph{trước} lệnh ghi đầu tiên (\texttt{EXECABORT}, \texttt{DISCARD}, Lua kiểm tra trước). Bù trừ từ client đưa dữ liệu về như cũ nhưng không nguyên tử: trong khoảng thời gian giữa lỗi và lúc bù trừ, client khác vẫn thấy người dùng đã có vai trò \texttt{AUTHOR}.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản T3 -- Giao tác khi tải tăng.}
+\paragraph{Kịch bản 3 -- Giao tác khi tải tăng.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra hiệu năng và tính đúng của giao tác khi nhiều người dùng cùng ghi vào một dòng. Có 200 lượt đánh giá cho cùng một truyện, mỗi lượt của một người dùng khác nhau, điểm 1--5 lần lượt (trung bình đúng là 3,00), được chia đều cho 1, 10, 50 và 100 client đồng thời. Mỗi mức tải có giới hạn 60~giây; deadlock (SQL Server) hoặc \texttt{EXEC} bị huỷ (Redis) đều được thử lại.
 
@@ -269,7 +251,7 @@ Redis & Lua: thời gian server (micro giây/lượt) & 44 & 25 & 49 & 36 \\ \hl
 Redis & \texttt{WATCH}: số lần thử lại & 0 & 739 & 2\,519 & 3\,599 \\ \hline
 Redis & \texttt{WATCH}: thời gian server (micro giây/lượt) & 8 & 37 & 73 & 108 \\ \hline
 \end{tabular}
-\caption{Xung đột và thời gian phía server của kịch bản T3}
+\caption{Xung đột và thời gian phía server của kịch bản 3}
 \label{tab:tx-t3-conflict}
 \end{table}
 

@@ -1,8 +1,6 @@
 \subsection{Xử lý truy vấn (Query Processing)}
 \label{subsec:query-processing}
 
-Nếu chỉ mục cung cấp các "đường tắt" để đi đến dữ liệu, thì bộ xử lý truy vấn là thành phần quyết định sẽ đi theo con đường nào. Mục này tìm hiểu cách SQL Server biến một câu truy vấn khai báo thành kế hoạch thực thi cụ thể, đồng thời so sánh với cách Redis xử lý từng lệnh, nơi mà "kế hoạch" do chính người lập trình thiết kế từ trước. Các truy vấn được chọn để thực nghiệm đều là truy vấn thật của Novelle, ứng với các loại truy vấn mà đề bài yêu cầu.
-
 \subsubsection{Cơ sở lý thuyết}
 
 \paragraph{Quy trình xử lý truy vấn và kế hoạch thực thi.}

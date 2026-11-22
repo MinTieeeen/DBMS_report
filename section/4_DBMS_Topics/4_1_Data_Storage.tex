@@ -5,19 +5,24 @@
 Mục này đối chiếu cách MS SQL Server và Redis thực hiện \textbf{tổ chức}, \textbf{lưu trữ} và \textbf{quản lý} dữ liệu. Thể hiện qua hai nội dung chính:
 \begin{itemize}
     \item Lý thuyết về cơ chế hiện thực của từng hệ quản trị.
-    \item Thực nghiệm kiểm chứng các cơ chế đó trên dữ liệu thực tế của dự án, qua hai kịch bản: Chi phí ghi và tổ chức lưu trữ (\textit{write bottleneck}), và Quản lý tài nguyên khi bộ nhớ không đủ (\textit{key eviction}).
+    \item Thực nghiệm kiểm chứng các cơ chế đó trên dữ liệu thực tế của dự án, qua hai kịch bản: Chi phí ghi và tổ chức lưu trữ, và Quản lý tài nguyên khi bộ nhớ không đủ.
 \end{itemize}
 % =====================================================================
-\subsubsection{Cơ chế tổ chức lưu trữ định hướng đĩa cứng (Disk-Oriented Storage) kết hợp kiến trúc cây B+ (B+ tree) của MS SQL Server}
+\subsubsection{Cơ chế tổ chức lưu trữ của MS SQL Server}
 \label{subsubsec:ds-mssql}
 
-\paragraph{Trang và khối cấp phát:}\mbox{}\\
 Đơn vị lưu trữ cơ sở của SQL Server là \textbf{trang} (\textit{page}) kích thước cố định 8 KB, gồm ba thành phần chính:
 \begin{itemize}
     \item \textbf{Tiêu đề trang} (\textit{page header}): 96 byte đầu trang, chứa \textbf{siêu dữ liệu} (\textit{metadata}) như số hiệu trang, loại trang, đối tượng sở hữu và dung lượng còn trống.
     \item \textbf{Các dòng dữ liệu} (\textit{data rows}): được ghi tuần tự ngay sau tiêu đề trang; kích thước mỗi dòng phụ thuộc vào cấu trúc bảng và kiểu dữ liệu.
-    \item \textbf{Mảng độ dời} (\textit{row offset array}): nằm ở cuối trang, phát triển ngược lên trên, lưu vị trí bắt đầu của từng dòng để định vị một dòng mà không phải quét cả trang.
+    \item \textbf{Bảng độ dời} (\textit{row offset table}): nằm ở cuối trang, phát triển ngược lên trên, lưu vị trí bắt đầu của từng dòng để định vị một dòng mà không phải quét cả trang.
 \end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\linewidth,height=0.9\textheight,keepaspectratio]{image/chapter4/page-structure.png}
+    \caption{Cấu trúc trang lưu trữ trong SQL Server}
+\end{figure}
 
 Mỗi tám trang liên tiếp tạo thành một \textbf{khối cấp phát} (\textit{extent}) với kích thước 64 KB, gồm hai loại:
 \begin{itemize}
@@ -26,72 +31,69 @@ Mỗi tám trang liên tiếp tạo thành một \textbf{khối cấp phát} (\t
 \end{itemize}
 Từ SQL Server 2016, cơ sở dữ liệu người dùng mặc định cấp phát theo khối cấp phát đồng nhất.
 
-\paragraph{Trang dữ liệu lớn (LOB):}\mbox{}\\
 Mỗi dòng dữ liệu phải nằm gọn trong một trang được cấp phát. Tuy nhiên đối với các cột dữ liệu có kích thước lớn, khi vượt quá dung lượng trang cho phép, cần được tách ra lưu ở các \textbf{trang dữ liệu lớn} (\textit{Large Object page -- LOB page}) riêng; trên dòng chính chỉ còn con trỏ tới phần dữ liệu đó. 
 \paragraph{Cấu trúc cây B+:}\mbox{}\\
 SQL Server tổ chức lưu trữ bảng theo cấu trúc cây B+:
 \begin{itemize}
-    \item \textbf{Nút gốc} (\textit{root node}) và \textbf{nút trung gian} (\textit{intermediate node}) chứa duy nhất \textbf{Khóa chỉ mục} (\textit{index keys}) và \textbf{Con trỏ điều hướng} (\textit{references}) tới tầng dưới, dùng để thu hẹp phạm vi tìm kiếm.
-    \item \textbf{Nút lá} (\textit{leaf node}) của \textbf{chỉ mục cụm} (\textit{clustered index}) là các đơn vị thực sự lưu trữ toàn bộ dữ liệu thực tế của các bản ghi trong cây, thứ tự của các bản ghi được quản lý bởi thứ tự của các khóa chỉ mục; nút lá của \textbf{chỉ mục không cụm} (\textit{nonclustered index}) chỉ chứa khóa, các cột \texttt{INCLUDE} và con trỏ về dòng gốc. Ngoài ra, giữa các nút lá được liên kết với nhau theo cấu trúc \textbf{Danh sách liên kết kép} (\textit{Doubly Linked List}) nhằm đạt được tốc độ tối đa khi thực thi các truy vấn quét theo khoảng giá trị.
-\end{itemize}
-\paragraph{Cơ chế Ghi nhật ký trước (Write-Ahead Logging - WAL) và đồng bộ trang}\mbox{}\\
-Việc thực hiện ghi và cập nhật dữ liệu trực tiếp lên cây B+ yêu cầu ổ cứng phải di chuyển đến đúng vị trí của trang vật lý (\textbf{truy xuất ngẫu nhiên} - \textit{random I/O}) gây ra độ trễ và chi phí I/O rất tốn kém. Để tối ưu, SQL Server áp dụng giao thức \textbf{ghi nhật ký trước} (\textit{write-ahead logging -- WAL}) qua \textbf{nhật ký giao dịch} (\textit{transaction log}):
-\begin{itemize}
-    \item Khi dữ liệu thay đổi, SQL Server thực hiện cập nhật trang trong \textbf{vùng đệm} (\textit{buffer pool}). Trang đó sẽ được đánh dấu là \textbf{trang bẩn} (\textit{dirty page}) và một bản ghi nhật ký sẽ đồng thời được ghi tuần tự vào nhật ký giao dịch. Mỗi \textbf{Giao tác} (\textit{transaction}) chỉ được \textbf{xác nhận} (\textit{commit}) khi bản ghi nhật ký đã được ghi bền vững xuống đĩa.
-    \item Các trang bẩn được ghi xuống file dữ liệu sau đó, bởi tiến trình \textbf{Checkpoint} (thực hiện định kỳ) hoặc \textbf{Lazy Writer} (khi cần giải phóng bộ nhớ). Nhờ vậy, việc ghi trang không chặn các truy vấn đang chạy, và nhật ký bảo đảm khả năng phục hồi sau sự cố.
+    \item \textbf{Nút gốc} và \textbf{nút nội} chứa duy nhất \textbf{Khóa chỉ mục} và \textbf{Con trỏ điều hướng} tới tầng dưới, dùng để thu hẹp phạm vi tìm kiếm.
+    \item \textbf{Nút lá} của \textbf{chỉ mục cụm} (\textit{clustered index}) là các đơn vị thực sự lưu trữ toàn bộ dữ liệu thực tế của các bản ghi trong cây, thứ tự của các bản ghi được quản lý bởi thứ tự của các khóa chỉ mục; nút lá của \textbf{chỉ mục không cụm} (\textit{nonclustered index}) chỉ chứa khóa, các cột \texttt{INCLUDE} và con trỏ về dòng gốc. Ngoài ra, giữa các nút lá được liên kết với nhau theo cấu trúc \textbf{danh sách liên kết đôi} nhằm đạt được tốc độ tối đa khi thực thi các truy vấn quét theo khoảng giá trị.
 \end{itemize}
 
-\paragraph{Nút thắt cổ chai về Hiệu suất ghi - Write Bottleneck.}\mbox{}\\
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth,height=0.9\textheight,keepaspectratio]{image/chapter4/b+-structure.jpg}
+    \caption{Cấu trúc lưu trữ bảng sử dụng cây B+ trong SQL Server}
+\end{figure}
+
+\paragraph{Cơ chế Ghi nhật ký trước (WAL) và đồng bộ trang}\mbox{}\\
+Việc thực hiện ghi và cập nhật dữ liệu trực tiếp lên cây B+ yêu cầu ổ cứng phải di chuyển đến đúng vị trí của trang vật lý gây ra độ trễ và chi phí I/O rất tốn kém. Để tối ưu, SQL Server áp dụng giao thức \textbf{ghi nhật ký trước} (\textit{write-ahead logging -- WAL}) qua nhật ký giao dịch (\textit{transaction log}):
+\begin{itemize}
+    \item Khi dữ liệu thay đổi, SQL Server thực hiện cập nhật trang trong vùng đệm (\textit{buffer pool}). Trang đó sẽ được đánh dấu là trang bẩn (\textit{dirty page}) và một bản ghi nhật ký sẽ đồng thời được ghi tuần tự vào nhật ký giao dịch. Mỗi giao tác chỉ được commit khi bản ghi nhật ký đã được ghi bền vững xuống đĩa.
+    \item Các trang bẩn được ghi xuống tập tin dữ liệu sau đó, bởi tiến trình \textbf{checkpoint} (thực hiện định kỳ) hoặc \textbf{Lazy Writer} (khi cần giải phóng bộ nhớ). Nhờ vậy, việc ghi trang không chặn các truy vấn đang chạy, và nhật ký bảo đảm khả năng phục hồi sau sự cố.
+\end{itemize}
+
 Mặc dù giao thức WAL chuyển phần lớn thao tác ghi ngẫu nhiên thành ghi tuần tự vào nhật ký, kiến trúc cây B+ của MS SQL Server vẫn đối mặt với nút thắt cổ chai khi lưu lượng ghi/cập nhật dữ liệu quá lớn. Nguyên nhân xuất phát từ bản chất cập nhật tại chỗ (\textit{Update-in-place}) trên cây B+:
 \begin{itemize}
-    \item Khi trang lá đã đầy mà dòng mới phải chèn vào giữa cây, việc giữ cây cân bằng đòi hỏi thao tác \textbf{tách trang} (\textit{page split}) đắt đỏ, gây \textbf{phân mảnh chỉ mục} (\textit{index fragmentation}) và dư thừa dung lượng đĩa.
-    \item Ngoài ra, quá trình đồng bộ dữ liệu ngầm từ RAM xuống đĩa cứng vẫn yêu cầu một lượng băng thông nhất định với các thao tác \textbf{I/O ngẫu nhiên} (\textit{Random I/O}), dẫn đến hiện tượng tranh chấp băng thông ổ đĩa với các luồng truy vấn chính yếu của hệ thống.
+    \item Khi trang lá đã đầy mà dòng mới phải chèn vào giữa cây, việc giữ cây cân bằng đòi hỏi thao tác tách trang đắt đỏ, gây phân mảnh chỉ mục và dư thừa dung lượng đĩa.
+    \item Ngoài ra, quá trình đồng bộ dữ liệu ngầm từ RAM xuống đĩa cứng vẫn yêu cầu một lượng băng thông nhất định với các thao tác I/O, dẫn đến hiện tượng tranh chấp băng thông ổ đĩa với các luồng truy vấn chính yếu của hệ thống.
 \end{itemize}
-% =====================================================================
-\subsubsection{Cơ chế tổ chức lưu trữ trên bộ nhớ và ghi nối tiếp (In-Memory \& Append-Only) kết hợp kiến trúc bảng băm (Hash) trên Redis}
-\label{subsubsec:ds-redis}
-
-\paragraph{Bảng băm toàn cục và cơ chế cấp phát động:}\mbox{}\\
-Khác với cơ chế phân bổ bằng các trang tĩnh 8KB của MS SQL Server, Redis vận hành hoàn toàn trên RAM và sử dụng trình cấp phát bộ nhớ động (Dynamic Memory Allocation).
-\begin{itemize}
-    \item Mọi key nằm trong một \textbf{bảng băm toàn cục} (\textit{global hash table}), ánh xạ trực tiếp từ key tới đối tượng giá trị với chi phí trung bình $O(1)$. 
-    \item Bộ nhớ cho từng đối tượng lưu trữ được \textbf{cấp phát động} (\textit{dynamic allocation}) qua \textbf{trình cấp phát} (\textit{allocator}) theo kích thước thực của từng đối tượng, thay vì theo trang cố định. Tuy vậy, mỗi key vẫn có \textbf{chi phí quản lý} (\textit{overhead}) riêng: đối tượng key, mục trong bảng băm, phần làm tròn khi cấp phát.
-    \item Để tiết kiệm RAM, Redis đồng thời hiện thực \textbf{Mã hóa dữ liệu} (\textit{encoding}) tùy theo kích thước vật lý của đối tượng lưu trữ. Đối với \textbf{Dữ liệu nhỏ}, Redis thực hiện nén đối tượng lưu trữ thành một khối bộ nhớ liên tục (\textit{listpack}, \textit{intset}), không cần con trỏ cho từng phần tử. Với Hash, ngưỡng mặc định là tối đa 512 trường và mỗi giá trị tối đa 64 byte. Khi vượt ngưỡng, Redis phân giải đối tượng và chuyển sang cấu trúc đầy đủ để giữ tốc độ truy xuất.
-    \item Đánh đổi của kiểu mã hóa nén là chi phí CPU: tìm một phần tử trong listpack phải quét tuần tự $O(N)$ thay vì $O(1)$.
-\end{itemize}
-
-\paragraph{Cơ chế bảo đảm độ bền cho dữ liệu trên RAM:}\mbox{}\\
-Để đảm bảo tính bền vững và khả năng phục hồi dữ liệu sau sự cố cho toàn bộ tập dữ liệu được duy trì trên RAM, Redis áp dụng cơ chế \textbf{lưu bền xuống đĩa} (\textit{persistence}) thông qua hai thành phần chính:
-\begin{itemize}
-    \item \textbf{Tệp ghi nối tiếp} (\textit{Append-Only File -- AOF}): ghi tuần tự các lệnh làm thay đổi dữ liệu xuống bộ đệm AOF, rồi đồng bộ xuống đĩa theo cấu hình \texttt{appendfsync}.
-    \item \textbf{Ảnh chụp dữ liệu} (\textit{Redis Database snapshot -- RDB}): định kỳ ghi toàn bộ dữ liệu tại một thời điểm xuống đĩa, giúp khởi động lại nhanh.
-\end{itemize}
-Cả hai thành phần RDB và ghi lại AOF được thực hiện ngầm bởi \textbf{tiến trình con} (\textit{child process}) tạo bằng \texttt{fork()}, trong khi tiến trình chính (\textit{parent process}) tiếp tục phục vụ lệnh.
-\paragraph{Sự đánh đổi dẫn đến Điểm nghẽn về Hiệu suất ghi}\mbox{}\\
-Để đạt được sự tối ưu hóa dung lượng và tốc độ hoạt động tại RAM như trên, kiến trúc của Redis phải chấp nhận hai sự đánh đổi:
-\begin{itemize}
-    \item \textbf{Đánh đổi chu kỳ CPU lấy bộ nhớ} (\textit{CPU overhead}): các cấu trúc nén như listpack lưu các phần tử liền nhau, không có con trỏ và siêu dữ liệu riêng cho từng phần tử, nên giảm đáng kể \textbf{chi phí siêu dữ liệu} (\textit{metadata overhead}) trên RAM. Đổi lại, tìm một phần tử phải quét tuần tự $O(N)$ thay vì $O(1)$, và mỗi lần chèn, sửa hoặc xóa có thể phải cấp phát lại và dịch chuyển cả khối bộ nhớ.
-    \item \textbf{Khuếch đại ghi khi lưu bền} (\textit{write amplification}): Redis tránh được chi phí ghi ngẫu nhiên khi cập nhật cây B+, nhưng cơ chế lưu bền lại sinh ra lượng ghi đĩa lớn hơn nhiều so với lượng dữ liệu thực sự thay đổi. Cụ thể, AOF ghi lại \textit{mọi} lệnh ghi, kể cả khi ghi đè cùng một key, và để AOF không phình to mãi, tiến trình con ghi toàn bộ dữ liệu hiện tại thành một tệp nền mới. Điều tương tự cũng xảy ra với RDB.
-\end{itemize}
-Trong các tình huống tải ghi lớn, hai đánh đổi trên càng dẫn đến hiện tượng \textbf{Nút thắt cổ chai về Hiệu suất ghi} (\textit{Write Bottleneck}) khi tiến trình con chiếm dụng phần lớn băng thông I/O, làm thao tác \texttt{fsync} của AOF chậm lại. Với \texttt{everysec}, \texttt{fsync} chạy ở luồng nền; nhưng nếu lần \texttt{fsync} trước kéo dài quá khoảng 2 giây, Redis buộc phải ghi chặn trên luồng chính, kéo theo độ trễ của toàn bộ lệnh ghi.
 
 %======================================================================
 \subsubsection{Cách thức MS SQL Server quản lý Vùng đệm (Buffer Management)}
 
-MS SQL Server sử dụng các vùng nhớ đệm RAM để lưu giữ bản sao các trang dữ liệu, trình quản lý sẽ ưu tiên trả kết quả từ RAM (đọc logic - \textit{logical read}) và chỉ đọc từ đĩa (đọc vật lý - \textit{physical read}) khi trang chưa có sẵn. Đơn vị nạp lên RAM luôn là cả trang: đọc một dòng nhỏ vẫn phải nạp nguyên trang chứa nó. Việc giải phóng RAM dựa trên hai tiến trình nền:
+MS SQL Server sử dụng các vùng nhớ đệm RAM để lưu giữ bản sao các trang dữ liệu, trình quản lý sẽ ưu tiên trả kết quả từ RAM và chỉ đọc từ đĩa khi trang chưa có sẵn. Đơn vị nạp lên RAM luôn là cả trang. Việc giải phóng RAM dựa trên hai tiến trình nền:
 \begin{itemize}
-    \item \textbf{Checkpoint} định kỳ ghi trang bẩn xuống đĩa, biến chúng thành \textbf{trang sạch} (\textit{clean page}); trang sạch vẫn ở lại RAM nhưng sẵn sàng bị thu hồi.
+    \item \textbf{Checkpoint} định kỳ ghi trang bẩn xuống đĩa, biến chúng thành trang sạch; trang sạch vẫn ở lại RAM nhưng sẵn sàng bị thu hồi.
     \item \textbf{Lazy Writer} thu hồi những trang lâu không được dùng. Trang sạch được bỏ ngay khỏi RAM; trang bẩn phải được ghi xuống đĩa trước khi thu hồi.
 \end{itemize}
 Vì vùng đệm chỉ chứa bản sao, việc thu hồi và giải phóng dung lượng RAM không làm mất dữ liệu; cái giá phải trả là những lần đọc sau chậm hơn.
+% =====================================================================
+\subsubsection{Cơ chế tổ chức lưu trữ trên Redis}
+\label{subsubsec:ds-redis}
+
+Redis vận hành hoàn toàn trên RAM và sử dụng trình cấp phát bộ nhớ động.
+\begin{itemize}
+    \item Mọi key nằm trong một bảng băm toàn cục, ánh xạ trực tiếp từ key tới đối tượng giá trị với chi phí trung bình $O(1)$. 
+    \item Bộ nhớ cho từng đối tượng lưu trữ được cấp phát động qua trình cấp phát theo kích thước thực của từng đối tượng, thay vì theo trang cố định. Tuy vậy, mỗi key vẫn có chi phí quản lý (\textit{overhead}) riêng: đối tượng key, mục trong bảng băm, phần làm tròn khi cấp phát.
+    \item Để tiết kiệm RAM, Redis đồng thời hiện thực mã hóa dữ liệu tùy theo kích thước vật lý của đối tượng lưu trữ. Đối với dữ liệu nhỏ, Redis thực hiện nén đối tượng lưu trữ thành một khối bộ nhớ liên tục (\textit{listpack}, \textit{intset}), không cần con trỏ cho từng phần tử. Với Hash, ngưỡng mặc định là tối đa 512 trường và mỗi giá trị tối đa 64 byte. Khi vượt ngưỡng, Redis phân giải đối tượng và chuyển sang cấu trúc đầy đủ để giữ tốc độ truy xuất.
+    \item Đánh đổi của kiểu mã hóa nén là chi phí CPU: tìm một phần tử trong listpack phải quét tuần tự $O(N)$ thay vì $O(1)$.
+\end{itemize}
+
+Để đảm bảo tính bền vững và khả năng phục hồi dữ liệu sau sự cố cho toàn bộ tập dữ liệu được duy trì trên RAM, Redis áp dụng cơ chế lưu bền xuống đĩa (\textit{persistence}) thông qua hai thành phần chính:
+\begin{itemize}
+    \item \textbf{Tệp ghi nối tiếp} (\textit{Append-Only File -- AOF}): ghi tuần tự các lệnh làm thay đổi dữ liệu xuống bộ đệm AOF, rồi đồng bộ xuống đĩa theo cấu hình \texttt{appendfsync}.
+    \item \textbf{Ảnh chụp dữ liệu} (\textit{Redis Database snapshot -- RDB}): định kỳ ghi toàn bộ dữ liệu tại một thời điểm xuống đĩa, giúp khởi động lại nhanh.
+\end{itemize}
+
+
 %======================================================================
-\subsubsection{Kiến trúc Quản lý Bộ nhớ của Redis (Eviction \& Maxmemory)}
+\subsubsection{Kiến trúc Quản lý Bộ nhớ của Redis}
 
 Dữ liệu được Redis lưu trữ trên RAM thường là bản sao của dữ liệu gốc, đóng vai trò như một phân lớp đệm giúp tăng tốc độ tái truy xuất dữ liệu cho các hệ thống lưu trữ đĩa cứng truyền thống, việc xóa bớt dữ liệu khi hết bộ nhớ là hợp lý. Quá trình điều tiết tài nguyên của Redis xoay quanh ba yếu tố cốt lõi:
 \begin{itemize}
-    \item \textbf{Giới hạn bộ nhớ} (\texttt{maxmemory}): giới hạn bộ nhớ dành cho dữ liệu. Khác với vùng đệm của SQL Server, đây là giới hạn cho không gian lưu dữ liệu chính. Tuy nhiên, các bộ đệm vận hành như bộ đệm AOF và bộ đệm gửi cho \textbf{bản sao} (\textit{replica}) không được tính vào giới hạn này, để tránh vòng lặp xóa dữ liệu do chính hoạt động nội bộ gây ra.
+    \item \textbf{Giới hạn bộ nhớ} (\texttt{maxmemory}): giới hạn bộ nhớ dành cho dữ liệu. Khác với vùng đệm của SQL Server, đây là giới hạn cho không gian lưu dữ liệu chính. Tuy nhiên, các bộ đệm vận hành như bộ đệm AOF và bộ đệm gửi cho bản sao (\textit{replica}) không được tính vào giới hạn này, để tránh vòng lặp xóa dữ liệu do chính hoạt động nội bộ gây ra.
     \item \textbf{Chính sách trục xuất} (\textit{eviction policy} và cấu hình \texttt{maxmemory-policy}), gồm tám chính sách thuộc ba nhóm: \texttt{noeviction} (không xóa, từ chối lệnh ghi khi đầy); nhóm \texttt{allkeys-*} (\texttt{lru}, \texttt{lfu}, \texttt{random}) chọn key trên toàn bộ \textbf{không gian key} (\textit{keyspace}), và nhóm \texttt{volatile-*} (\texttt{lru}, \texttt{lfu}, \texttt{random}, \texttt{ttl}) chỉ chọn trong các key được gán \textbf{thời gian sống} (\textit{Time To Live -- TTL}).
-    \item \textbf{Thuật toán xấp xỉ:} Redis không theo dõi \textbf{chính xác} (\textit{exact}) thứ tự hoặc tần suất truy cập của toàn bộ key, mà thực hiện \textbf{lấy mẫu ngẫu nhiên} (\textit{random sampling}) một số key (\texttt{maxmemory-samples}, mặc định 5) rồi xóa key ít được dùng nhất trong mẫu. Đối với các chính sách căn cứ vào tần suất truy cập (LFU), Redis dùng 24 bit trong siêu dữ liệu của mỗi đối tượng: 16 bit lưu thời điểm để làm suy giảm bộ đếm, 8 bit lưu \textbf{bộ đếm logarit} (\textit{logarithmic counter}) có tính xác suất. Cách làm này chấp nhận một sai lệch nhỏ để tiết kiệm bộ nhớ và CPU, giữ độ trễ ở mức micro-giây.
+    \item \textbf{Thuật toán xấp xỉ:} Redis không theo dõi chính xác (\textit{exact}) thứ tự hoặc tần suất truy cập của toàn bộ khóa, mà thực hiện lấy mẫu ngẫu nhiên một số khóa (\texttt{maxmemory-samples}, mặc định 5) rồi xóa khóa ít được dùng nhất trong mẫu. Đối với các chính sách căn cứ vào tần suất truy cập (LFU), Redis dùng 24 bit trong siêu dữ liệu của mỗi đối tượng: 16 bit lưu thời điểm để làm suy giảm bộ đếm, 8 bit lưu \textbf{bộ đếm logarit} có tính xác suất. Cách làm này chấp nhận một sai lệch nhỏ để tiết kiệm bộ nhớ và CPU, giữ độ trễ ở mức micro-giây.
 \end{itemize}
 
 % =====================================================================
@@ -99,10 +101,7 @@ Dữ liệu được Redis lưu trữ trên RAM thường là bản sao của d�
 \label{subsubsec:ds-experiment}
 
 \textbf{Môi trường và tiêu chí đánh giá:}
-\begin{itemize}
-    \item Thực nghiệm được viết thành các cặp kịch bản trong công cụ DBMS Lab của nhóm (\texttt{category\_lab}, topic \texttt{data\_storage}). Các kịch bản không sửa bảng \texttt{dbo.*} mà làm việc trên \textbf{bản sao thử nghiệm} (\textit{sandbox}) trong schema \texttt{lab}, và mọi key Redis đều có tiền tố \texttt{lab:data\_storage:}.
-    \item Nội dung kiểm thử chỉ ghi nhận \textbf{thời gian xử lý phía máy chủ} (\textit{server-side time}): với SQL Server là thời gian thực thi câu lệnh, với Redis là thời gian ghi nhận trong SLOWLOG; thời gian truyền qua mạng không được tính. 
-\end{itemize}
+Thực nghiệm được viết thành các cặp kịch bản trong công cụ DBMS Lab của nhóm. Các kịch bản không sửa bảng của thiết kế trước đó mà làm việc trên bản sao thử nghiệm trong schema \texttt{lab}, và mọi key Redis đều có tiền tố \texttt{lab:data\_storage:}. Nội dung kiểm thử chỉ ghi nhận thời gian xử lý phía máy chủ
 
 \begin{table}[H]
 \centering
@@ -120,10 +119,10 @@ Dữ liệu & Chương truyện thật trong bảng \texttt{dbo.Chapter} (3.454 
 \end{table}
 
 \paragraph{Kịch bản 1: Write bottleneck --- chi phí ghi và tổ chức lưu trữ.}\mbox{}\\
-Kịch bản mô phỏng hai tình huống của chức năng viết chương (F9):
+Kịch bản mô phỏng hai tình huống của chức năng viết chương:
 \begin{itemize}
-    \item \texttt{bulk\_import}: \textbf{nhập hàng loạt} (\textit{bulk import}) --- tác giả chuyển một bộ truyện đã có sang Novelle, nhập 500 chương thành một truyện mới trong một lần.
-    \item \texttt{autosave}: \textbf{tự động lưu} (\textit{autosave}) --- trình soạn thảo tự lưu bản nháp vài giây một lần; mỗi lần ghi lại nội dung của cùng một chương, nội dung thay đổi sau mỗi lần lưu.
+    \item \texttt{bulk\_import}: nhập hàng loạt --- tác giả chuyển một bộ truyện đã có sang nền tảng Novelle, nhập 500 chương thành một truyện mới trong một lần.
+    \item \texttt{autosave}: \textbf{tự động lưu} --- trình soạn thảo tự lưu bản nháp vài giây một lần; mỗi lần ghi lại nội dung của cùng một chương, nội dung thay đổi sau mỗi lần lưu.
     \item Dữ liệu ghi là 500 chương thật đầu tiên của \texttt{dbo.Chapter}; mỗi bên được nạp sẵn 1.500 chương thật làm dữ liệu nền. Mỗi phép đo chạy 5 lần sau 1 lần \textbf{chạy khởi động} (\textit{warm-up}), kết quả so sánh theo \textbf{trung vị} (\textit{median}, p50).
     \item Ngoài thời gian ghi, kịch bản đo dung lượng một truyện 500 chương chiếm (\texttt{storage\_bytes}), lượng nhật ký giao dịch sinh ra (\texttt{log\_bytes}), số trang và \textbf{độ phân mảnh} (\textit{fragmentation}) của từng chỉ mục.
 \end{itemize}
@@ -151,7 +150,7 @@ EXPIRE draft:{userId}:{chapterId} 604800
 \end{itemize}
 
 \paragraph{Kịch bản 2: Key eviction --- quản lý tài nguyên khi bộ nhớ không đủ.}\mbox{}\\
-Kịch bản mô phỏng \textbf{giờ cao điểm đọc truyện} (F4): người đọc tập trung vào một nhóm nhỏ \textbf{chương nóng} (\textit{hot chapters}). Dữ liệu gồm 1.000 chương thật đầu tiên của \texttt{dbo.Chapter}.
+Kịch bản mô phỏng giờ cao điểm đọc truyện: người đọc tập trung vào một nhóm nhỏ chương của truyện đang hot. Dữ liệu gồm 1.000 chương thật đầu tiên của \texttt{dbo.Chapter}.
 \begin{itemize}
     \item \textbf{Redis}, theo mô hình \textbf{đọc qua bộ nhớ đệm} (\textit{cache-aside}): mỗi chương là key \texttt{cache:\allowbreak chapter:\allowbreak\{chapterId\}} (chuỗi JSON, TTL 30 phút); thêm 100 bộ đếm lượt xem chưa đồng bộ \texttt{views:\allowbreak chapter:\allowbreak\{chapterId\}} không có TTL. Theo đặc tả của Novelle, đây là loại dữ liệu Redis duy nhất có thể bị mất.
     \item \textbf{Ràng buộc:} \texttt{maxmemory} = bộ nhớ nền + 50\% dung lượng của 1.000 chương, nên bộ nhớ đệm chỉ chứa được khoảng 500 chương.

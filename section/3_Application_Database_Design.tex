@@ -5,16 +5,12 @@
 \subsection{Tổng quan ứng dụng}
 \label{subsec:app-overview}
 
-Chương này trình bày ứng dụng Novelle, bối cảnh nghiệp vụ được dùng xuyên suốt báo cáo. Nhóm lần lượt giới thiệu ứng dụng và các bên liên quan, liệt kê các yêu cầu chức năng, sau đó trình bày quá trình mô hình hoá dữ liệu và thiết kế dữ liệu trên từng hệ quản trị.
-
 \subsubsection{Giới thiệu ứng dụng}
 
 \textbf{Novelle} là một ứng dụng web cho phép người dùng đọc và sáng tác truyện dài kỳ trực tuyến. Điểm đặc biệt của Novelle là toàn bộ nội dung truyện do chính người dùng viết và đăng tải theo từng chương, nên mỗi người dùng vừa có thể là độc giả, vừa có thể trở thành tác giả. Về mặt kỹ thuật, ứng dụng được xây dựng theo mô hình client--server: phía client là một ứng dụng web chạy trên trình duyệt, còn phía server cung cấp REST API để xử lý nghiệp vụ và truy xuất dữ liệu.
 
 \subsubsection{Các bên liên quan chính}
 \label{subsubsec:stakeholders}
-
-Ứng dụng phục vụ bốn nhóm người dùng với quyền hạn tăng dần như sau:
 
 \begin{itemize}
     \item \textbf{Khách:} người truy cập chưa đăng nhập, có thể xem trang chủ, tìm kiếm, xem thông tin truyện, tác giả và đọc các chương đã đăng.
@@ -248,30 +244,26 @@ Từ các yêu cầu chức năng đã nêu ở mục~\ref{subsec:functional-req
     \item \textbf{Thống kê lượt xem:} lượt xem của mỗi truyện được tổng hợp theo từng ngày (\texttt{STORY\_VIEW\_DAILY}) để phục vụ biểu đồ thống kê của tác giả và quản trị viên.
 \end{itemize}
 
-Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như số chương, số chữ, lượt xem, lượt theo dõi và điểm trung bình của truyện là \textbf{thuộc tính dẫn xuất}, vì có thể tính lại từ các thực thể và quan hệ liên quan. Những thuộc tính này vẫn được thể hiện trên sơ đồ để phản ánh đúng yêu cầu nghiệp vụ, còn việc lưu sẵn hay tính lại chúng sẽ được quyết định ở bước thiết kế vật lý. Sơ đồ ERD hoàn chỉnh của hệ thống được trình bày ở Hình~\ref{fig:erd}.
+Sơ đồ ERD hoàn chỉnh của hệ thống được trình bày ở Hình~\ref{fig:erd}.
 
-\begin{landscape}
 \begin{figure}[p]
     \centering
     \includegraphics[width=\linewidth,height=0.9\textheight,keepaspectratio]{image/chapter3/erd.png}
     \caption{Sơ đồ thực thể - liên kết (ERD) của hệ thống Novelle}
     \label{fig:erd}
 \end{figure}
-\end{landscape}
 
 \subsubsection{Xây dựng lược đồ quan hệ (Relational Schema)}
 \label{subsubsec:relational-schema}
 
 Sau khi hoàn thành sơ đồ ERD, nhóm ánh xạ các thực thể, thực thể yếu, mối quan hệ nhiều--nhiều và phân cấp chuyên biệt hoá sang mô hình quan hệ theo các bước ánh xạ chuẩn. Kết quả là lược đồ quan hệ được trình bày ở Hình~\ref{fig:relational-schema}.
 
-\begin{landscape}
 \begin{figure}[p]
     \centering
     \includegraphics[width=\linewidth,height=0.9\textheight,keepaspectratio]{image/chapter3/relational-schema.png}
     \caption{Lược đồ quan hệ của hệ thống Novelle}
     \label{fig:relational-schema}
 \end{figure}
-\end{landscape}
 
 % ===================================================================
 \subsection{Thiết kế cơ sở dữ liệu trên MS SQL Server (SQL)}
@@ -282,8 +274,7 @@ Sau khi hoàn thành sơ đồ ERD, nhóm ánh xạ các thực thể, thực th
 
 Từ lược đồ quan hệ, nhóm hiện thực cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server với tổng cộng 18 bảng. Để dễ theo dõi, các bảng được chia thành ba nhóm là người dùng, nội dung và hoạt động đọc; với mỗi bảng, nhóm trình bày tên cột, kiểu dữ liệu, ràng buộc và ý nghĩa của từng cột.
 
-\paragraph{Nhóm người dùng}
-Nhóm đầu tiên gồm các bảng lưu thông tin tài khoản, hồ sơ tác giả và các mối quan hệ giữa người dùng với nhau.
+\paragraph{Nhóm người dùng}: lưu thông tin tài khoản, hồ sơ tác giả và các mối quan hệ giữa người dùng với nhau.
 
 \textbf{Bảng \texttt{[User]}} dùng để lưu tài khoản người dùng; vai trò quản trị viên được xác định qua cột \texttt{Role}. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-user}.
 
@@ -386,8 +377,7 @@ Nhóm đầu tiên gồm các bảng lưu thông tin tài khoản, hồ sơ tác
 }
 
 
-\paragraph{Nhóm nội dung}
-Nhóm thứ hai gồm các bảng lưu truyện, chương và các danh mục dùng để phân loại truyện.
+\paragraph{Nhóm nội dung:} gồm các bảng lưu truyện, chương và các danh mục dùng để phân loại truyện.
 
 \textbf{Bảng \texttt{Genre}} dùng để lưu danh mục thể loại truyện. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-genre}.
 

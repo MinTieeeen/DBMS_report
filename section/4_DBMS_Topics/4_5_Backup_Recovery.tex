@@ -1,8 +1,6 @@
 \subsection{Sao lưu và phục hồi dữ liệu (Data Backup and Recovery)}
 \label{subsec:backup-recovery}
 
-Mục này so sánh khả năng bảo vệ dữ liệu và khôi phục sau sự cố của MS SQL Server và Redis trong Novelle. Nội dung tập trung vào ba tình huống: mất tiến trình hoặc máy chủ, giao dịch lỗi giữa chừng và người dùng xoá nhầm dữ liệu. Phần thực nghiệm sử dụng SQL Server trên AWS RDS dùng chung và Redis chạy cục bộ; do khác biệt về hạ tầng, thời gian tuyệt đối giữa hai hệ thống chỉ có giá trị tham khảo.
-
 \subsubsection{Cơ sở lý thuyết}
 
 Sao lưu tạo bản dữ liệu có thể dùng lại khi dữ liệu chính bị mất hoặc hỏng; phục hồi đưa hệ thống về trạng thái nhất quán sau sự cố. Hai chỉ số thường dùng là \textit{Recovery Point Objective} (RPO), lượng dữ liệu tối đa có thể mất tính theo thời gian, và \textit{Recovery Time Objective} (RTO), thời gian cần để dịch vụ hoạt động trở lại. RPO phụ thuộc vào tần suất và độ bền của bản sao lưu; RTO còn phụ thuộc dung lượng cần nạp lại và quy trình khôi phục.
@@ -44,8 +42,6 @@ Sự cố tiến trình & Commit 1.000 dòng, để 1.000 dòng trong transactio
 \caption{Các kịch bản thực nghiệm về sao lưu và phục hồi}
 \label{tab:backup-recovery-scenarios}
 \end{table}
-
-Report được lưu trong repo ghi nhận lần chạy ngày 08/11/2026. Các số đo dưới đây là của lần chạy đó; phép đo SQL Server dùng RDS của nhóm còn Redis dùng máy cục bộ, nên so sánh thời gian chủ yếu nhằm minh hoạ cơ chế trong cùng kịch bản.
 
 \subsubsection{So sánh và đánh giá}
 

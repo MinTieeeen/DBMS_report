@@ -1,13 +1,8 @@
 \section{Thiết kế kiến trúc và triển khai ứng dụng}
 \label{sec:architecture-implementation}
 
-Sau khi đã thiết kế dữ liệu ở Chương~\ref{sec:app-db-design} và rút ra các kết luận về hai hệ quản trị ở Chương~\ref{sec:dbms-topics}, chương này trình bày cách nhóm hiện thực ứng dụng Novelle. Nội dung đi từ các công nghệ được sử dụng, kiến trúc tổng thể và cách tổ chức mã nguồn, cho đến quá trình hiện thực từng module chức năng cùng các câu truy vấn tiêu biểu trên SQL Server và Redis.
-
 \subsection{Tổng quan công nghệ sử dụng}
 \label{subsec:tech-stack}
-
-Như đã giới thiệu, Novelle được xây dựng theo mô hình client--server và gồm ba phần chính: ứng dụng web phía client, dịch vụ backend cung cấp REST API, và tầng dữ liệu gồm hai hệ quản trị cơ sở dữ liệu. Với mỗi phần, nhóm ưu tiên lựa chọn những công nghệ phổ biến, có tài liệu đầy đủ và phù hợp với kinh nghiệm của các thành viên. Bảng~\ref{tab:tech-stack} liệt kê các công nghệ cốt lõi được sử dụng trong từng phần.
-
 \begin{table}[H]
 \centering
 \small
@@ -71,8 +66,6 @@ Novelle được thiết kế theo kiến trúc client--server nhiều tầng (\
     \item \textbf{Redis} là lớp dữ liệu bổ trợ trong bộ nhớ, giữ những dữ liệu cần truy xuất nhanh hoặc chỉ có giá trị tạm thời. Mất dữ liệu trên Redis không làm hỏng dữ liệu nghiệp vụ trên SQL Server.
 \end{itemize}
 
-\paragraph{Luồng xử lý một yêu cầu.} Khi người dùng mở trang chi tiết một truyện, giao diện gửi yêu cầu qua API Client tới backend. Security Filter Chain xác định người dùng từ phiên lưu trên Redis, sau đó Controller chuyển yêu cầu cho Service tương ứng. Service tìm dữ liệu trong bộ nhớ đệm trên Redis trước; nếu chưa có, Service gọi Mapper truy vấn SQL Server, rồi lưu kết quả vào Redis cho các lần đọc sau. Với các thao tác ghi như đánh giá hay đăng chương, Service ghi xuống SQL Server trong một giao dịch, sau đó xoá các khoá đệm liên quan trên Redis để dữ liệu hiển thị luôn được cập nhật.
-
 \subsubsection{Sơ đồ gói (Package diagram)}
 \label{subsubsec:package-diagram}
 
@@ -114,8 +107,6 @@ Các gói phụ thuộc một chiều theo lớp: \texttt{controller} $\rightarr
 % ===================================================================
 \subsection{Thiết kế các thành phần hệ thống}
 \label{subsec:system-components}
-
-Nếu sơ đồ gói chia hệ thống theo lớp kỹ thuật, thì theo chiều nghiệp vụ, Novelle được phân rã thành tám module. Mỗi module phục vụ một nhóm chức năng, có phần giao diện riêng ở frontend, nhóm endpoint riêng ở backend và làm việc với một tập bảng xác định. Bảng~\ref{tab:system-modules} tóm tắt các module; trách nhiệm chi tiết của từng module được trình bày ngay sau đó.
 
 {\small
 \renewcommand{\arraystretch}{1.3}
@@ -225,8 +216,6 @@ novelle_backend/database/
 `-- queries/                   Truy vấn kiểm tra và kịch bản minh hoạ
 \end{minted}
 
-Các script trong \texttt{schema/} đều có thể chạy lại nhiều lần: bảng chỉ được tạo khi chưa tồn tại, còn view, thủ tục và trigger dùng \texttt{CREATE OR ALTER}. Sau khi nạp dữ liệu mẫu, script \texttt{queries/99\_check\_invariants.sql} được chạy để kiểm tra các giá trị dẫn xuất và ràng buộc nghiệp vụ còn đúng.
-
 % Ảnh chụp màn hình: nếu tệp đã có trong image/chapter5/ thì chèn ảnh, nếu chưa có thì hiện khung giữ chỗ.
 \providecommand{\screenshot}[3]{%
 \begin{figure}[H]
@@ -243,9 +232,6 @@ Các script trong \texttt{schema/} đều có thể chạy lại nhiều lần: 
 % ===================================================================
 \subsection{Hiện thực các chức năng của hệ thống}
 \label{subsec:features}
-
-Phần này đi sâu vào cách hiện thực từng module nghiệp vụ. Với mỗi module, nhóm lần lượt mô tả chức năng, trình bày luồng xử lý bằng sơ đồ tuần tự và trích dẫn các câu truy vấn tiêu biểu, qua đó cho thấy cách SQL Server và Redis phối hợp với nhau trong từng chức năng cụ thể.
-
 % -------------------------------------------------------------------
 \subsubsection{Module Danh mục \& truyện}
 \label{subsubsec:feature-catalog}

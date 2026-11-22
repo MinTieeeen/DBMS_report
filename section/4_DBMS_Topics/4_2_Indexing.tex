@@ -1,8 +1,5 @@
 \subsection{Cấu trúc chỉ mục (Indexing)}
 \label{subsec:indexing}
-
-Ở mục trước, nhóm đã tìm hiểu cách mỗi hệ quản trị tổ chức dữ liệu trên đĩa và trong bộ nhớ. Tuy nhiên, dữ liệu được lưu trữ tốt thôi là chưa đủ; điều quan trọng không kém là làm sao tìm ra đúng dữ liệu cần thiết một cách nhanh chóng. Đó chính là vai trò của chỉ mục. Mục này trình bày các loại chỉ mục cơ bản, cách SQL Server và Redis hiện thực chỉ mục, rồi kiểm chứng hiệu quả của chúng qua các truy vấn tiêu biểu của Novelle như tra cứu truyện, lọc nhiều điều kiện, phân trang và tìm kiếm toàn văn.
-
 \subsubsection{Cơ sở lý thuyết}
 \label{subsubsec:indexing-theory}
 
@@ -102,20 +99,8 @@ FT.SEARCH idx:product "@Category:{book} @Price:[0 100]"
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
 \label{subsubsec:indexing-experiment}
 
-Sau khi tìm hiểu cơ chế chỉ mục của hai hệ quản trị, nhóm tiến hành các thực nghiệm để đánh giá hiệu quả thực tế của chúng. Các kịch bản được xây dựng từ những truy vấn thường gặp nhất của Novelle, từ tra cứu đơn giản theo một cột cho đến tìm kiếm toàn văn.
-
-\paragraph{Môi trường và dữ liệu.}
-\begin{itemize}
-    \item SQL Server 2019 Express trên AWS RDS (db.t3.micro); Redis Stack 7.4 (có module RediSearch) chạy trong Docker.
-    \item Dữ liệu là bảng truyện \texttt{Story} với 100 và 1\,000 dòng, sinh theo cùng một quy tắc cho cả hai DBMS. Trên SQL Server, mỗi truyện là một dòng; trên Redis, mỗi truyện là một Hash \texttt{story:<id>}. Khoảng 86\% truyện ở trạng thái công khai.
-    \item Trên SQL Server, bảng ban đầu chỉ có clustered index trên khoá chính \texttt{StoryId}; mỗi kịch bản tạo chỉ mục cần thử, đo, rồi xoá đi.
-    \item Thời gian được đo phía server, không tính độ trễ mạng: SQL Server đo bằng \texttt{SYSDATETIME()} quanh vòng lặp chạy truy vấn; Redis lấy tổng thời gian thực thi lệnh ghi trong \texttt{SLOWLOG}. Mỗi số liệu là trung vị (p50) của 20 lần đo. Với SQL Server, số trang dữ liệu phải đọc (\emph{logical reads}) được ghi thêm.
-    \item Trong mỗi kịch bản, mọi biến thể đều được kiểm tra trả về cùng một tập kết quả, để việc so sánh tốc độ là công bằng.
-    \item Để dễ đọc, tên key Redis trong phần này được viết rút gọn.
-\end{itemize}
-
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I1 -- Tra cứu theo một cột.}
+\paragraph{Kịch bản 1 -- Tra cứu theo một cột.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra lợi ích cơ bản nhất của chỉ mục là tìm nhanh các dòng theo giá trị của một cột không phải khoá chính. Hai truy vấn được dùng: tìm đúng một truyện theo \texttt{Slug} (giá trị duy nhất) và tìm các truyện của một tác giả theo \texttt{AuthorId} (vài dòng).
 
@@ -123,7 +108,10 @@ Sau khi tìm hiểu cơ chế chỉ mục của hai hệ quản trị, nhóm ti�
 
 \begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
 SELECT StoryId, Title, Slug, CompletionStatus, ChapterCount, RatingAvg
-FROM Story WHERE Slug = @slug;          -- tương tự: WHERE AuthorId = @authorId
+FROM Story WHERE Slug = @slug;
+
+SELECT StoryId, Title, Slug, CompletionStatus, ChapterCount, RatingAvg
+FROM Story WHERE AuthorId = @authorId
 
 CREATE NONCLUSTERED INDEX IX_Slug   ON Story (Slug);
 CREATE NONCLUSTERED INDEX IX_Author ON Story (AuthorId);
@@ -149,14 +137,14 @@ Redis & \texttt{SCAN} toàn bộ key & 2,383 & 1,923 \\ \hline
 Redis & Chỉ mục tự xây & 0,004 & 0,032 \\ \hline
 Redis & RediSearch \texttt{TAG} & 0,029 & 0,039 \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I1 (1\,000 truyện)}
+\caption{Kết quả kịch bản 1 (1\,000 truyện)}
 \label{tab:idx-i1}
 \end{table}
 
 \textbf{Nhận xét.} Qua kết quả trên, có thể thấy chỉ mục giúp SQL Server đọc từ 74 trang xuống còn 4--10 trang và nhanh hơn 13--30 lần. Redis không có chỉ mục phụ sẵn nên khi dùng \texttt{SCAN} còn chậm hơn SQL Server quét bảng; khi có chỉ mục tự xây, việc tra cứu chỉ còn một lệnh \texttt{GET} và nhanh nhất trong các biến thể.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I2 -- Chỉ mục nhiều cột.}
+\paragraph{Kịch bản 2 -- Chỉ mục nhiều cột.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra chỉ mục khi truy vấn lọc theo nhiều điều kiện, như bộ lọc ``truyện đã hoàn thành có điểm đánh giá từ X trở lên'' (khoảng 5\% số truyện khớp). Kịch bản so sánh chỉ mục kết hợp (composite) với chỉ mục bao phủ (covering), loại chứa sẵn cả các cột cần trả về.
 
@@ -193,14 +181,14 @@ Redis & \texttt{SCAN} toàn bộ key & 0,465 & 2,224 & -- \\ \hline
 Redis & Sorted Set theo trạng thái & 0,036 & 0,150 & -- \\ \hline
 Redis & RediSearch & 0,048 & 0,158 & -- \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I2}
+\caption{Kết quả kịch bản 2}
 \label{tab:idx-i2}
 \end{table}
 
-\textbf{Nhận xét.} Kết quả cho thấy dù có composite index, bộ tối ưu của SQL Server vẫn chọn quét bảng (74 trang), vì với khoảng 50 dòng khớp, việc tra ngược từng dòng để lấy \texttt{Title}, \texttt{ChapterCount} (Key Lookup) tốn hơn quét toàn bộ. Covering index chứa sẵn các cột này nên được dùng, chỉ đọc 5 trang và nhanh gấp đôi. Redis không có bộ tối ưu: cấu trúc nào được dùng là do ứng dụng chọn, và cả Sorted Set lẫn RediSearch đều nhanh hơn \texttt{SCAN} khoảng 14 lần.
+\textbf{Nhận xét.} Kết quả cho thấy dù có chỉ mục phức hợp, bộ tối ưu của SQL Server vẫn chọn quét bảng (74 trang), vì với khoảng 50 dòng khớp, việc tra ngược từng dòng để lấy \texttt{Title}, \texttt{ChapterCount} (Key Lookup) tốn hơn quét toàn bộ. Chỉ mục bao phủ chứa sẵn các cột này nên được dùng, chỉ đọc 5 trang và nhanh gấp đôi. Redis không có bộ tối ưu: cấu trúc nào được dùng là do ứng dụng chọn, và cả Sorted Set lẫn RediSearch đều nhanh hơn \texttt{SCAN} khoảng 14 lần.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I3 -- Sắp xếp và phân trang.}
+\paragraph{Kịch bản 3 -- Sắp xếp và phân trang.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra chỉ mục khi truy vấn cần kết quả đã sắp xếp và chia trang, như danh sách ``truyện mới cập nhật'' trên trang chủ, mỗi trang 20 truyện. Mỗi biến thể được đo ở trang đầu và ở trang nằm giữa danh sách, để thấy ảnh hưởng của độ sâu trang. Hai cách phân trang được so sánh: \texttt{OFFSET} (bỏ qua $n$ dòng đầu) và \emph{keyset} (lấy tiếp các dòng sau dòng cuối của trang trước).
 
@@ -214,9 +202,12 @@ WHERE PublishStatus = 'PUBLISHED' AND IsDeleted = 0 AND LastChapterAt IS NOT NUL
 ORDER BY LastChapterAt DESC, StoryId DESC
 OFFSET @offset ROWS FETCH NEXT 20 ROWS ONLY;
 
--- Phân trang bằng keyset: tiếp tục sau dòng cuối (@lastTime, @lastId) của trang trước
-... AND (LastChapterAt < @lastTime OR (LastChapterAt = @lastTime AND StoryId < @lastId))
-ORDER BY LastChapterAt DESC, StoryId DESC;   -- lấy TOP (20)
+-- Phân trang bằng keyset: tiếp tục sau dòng cuối 
+SELECT TOP (20) StoryId, Title, ChapterCount, LastChapterAt
+FROM {table}
+WHERE PublishStatus = 'PUBLISHED' AND IsDeleted = 0 AND LastChapterAt IS NOT NULL
+  AND (LastChapterAt < ? OR (LastChapterAt = ? AND StoryId < ?))
+ORDER BY LastChapterAt DESC, StoryId DESC
 
 -- Chỉ mục có đúng thứ tự sắp xếp của truy vấn
 CREATE NONCLUSTERED INDEX IX_Public_Last
@@ -245,14 +236,14 @@ Redis & Sorted Set theo thứ hạng & 0,075 & 0,064 \\ \hline
 Redis & Sorted Set keyset & -- & 0,090 \\ \hline
 Redis & RediSearch \texttt{SORTBY} & 0,174 & 0,339 \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I3 (1\,000 truyện)}
+\caption{Kết quả kịch bản 3 (1\,000 truyện)}
 \label{tab:idx-i3}
 \end{table}
 
 \textbf{Nhận xét.} Từ bảng kết quả, có thể nhận thấy khi chỉ mục có sẵn đúng thứ tự cần sắp xếp, SQL Server không còn phải sắp xếp toàn bộ dữ liệu và trả trang đầu nhanh hơn khoảng 60 lần. Với \texttt{OFFSET}, các dòng bị bỏ qua vẫn phải đọc nên trang càng sâu càng chậm; keyset tránh được điều này. Sorted Set của Redis cho thời gian gần như không đổi ở mọi độ sâu, trong khi \texttt{SORTBY} của RediSearch chậm dần giống \texttt{OFFSET}.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I4 -- Chỉ mục có lọc (filtered index).}
+\paragraph{Kịch bản 4 -- Chỉ mục có lọc (filtered index).}
 
 \textbf{Mục đích.} Trên thực tế, các truy vấn công khai chỉ đọc truyện đang công khai, nên không cần đưa truyện nháp, truyện bị ẩn hay đã xoá vào chỉ mục. Kịch bản so sánh chỉ mục trên toàn bộ dữ liệu với chỉ mục chỉ chứa phần dữ liệu cần dùng, về dung lượng và tốc độ lấy trang đầu tiên.
 
@@ -287,14 +278,14 @@ Redis & Sorted Set mọi truyện & 1\,000 & 93 & 0,113 \\ \hline
 Redis & Sorted Set truyện công khai & 856 & 80 & 0,071 \\ \hline
 Redis & RediSearch \texttt{FILTER} & 856 & 133 & 0,156 \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I4 (1\,000 truyện)}
+\caption{Kết quả kịch bản 4 (1\,000 truyện)}
 \label{tab:idx-i4}
 \end{table}
 
 \textbf{Nhận xét.} Nhìn vào kết quả, có thể thấy việc chỉ đánh chỉ mục phần dữ liệu cần truy vấn giúp chỉ mục nhỏ hơn khoảng 20\% và truy vấn nhanh hơn ở cả hai DBMS. SQL Server hỗ trợ trực tiếp bằng mệnh đề \texttt{WHERE} khi tạo chỉ mục; với Sorted Set, ứng dụng phải tự quyết định truyện nào được thêm hoặc xoá khỏi tập. Chỉ mục RediSearch tốn bộ nhớ nhiều hơn Sorted Set tự xây.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I5 -- Tìm kiếm toàn văn.}
+\paragraph{Kịch bản 5 -- Tìm kiếm toàn văn.}
 
 \textbf{Mục đích.} Kịch bản này nhằm kiểm tra chức năng tìm truyện theo từ khoá trong tên và phần giới thiệu. Người dùng có thể gõ có dấu hoặc không dấu, nên ngoài tốc độ, kịch bản đo thêm \emph{recall}, tức tỉ lệ số truyện tìm được so với số truyện thực sự chứa từ khoá (261 truyện ở mức 1\,000 dòng).
 
@@ -330,14 +321,14 @@ Redis & \texttt{SCAN} & 6,57 & 39\% & 0\% \\ \hline
 Redis & RediSearch \texttt{TEXT} & 0,28 & 39\% & 0\% \\ \hline
 Redis & RediSearch trường bỏ dấu & 0,41 & 100\% & 100\% \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I5 (1\,000 truyện)}
+\caption{Kết quả kịch bản 5 (1\,000 truyện)}
 \label{tab:idx-i5}
 \end{table}
 
 \textbf{Nhận xét.} Qua kết quả trên, có thể thấy full-text index của SQL Server nhanh hơn \texttt{LIKE} khoảng 9 lần và tìm đủ cả khi người dùng gõ không dấu, nhờ bộ tách từ tiếng Việt. RediSearch nhanh hơn về thời gian nhưng không hiểu dấu tiếng Việt, nên chỉ tìm được 39\% số truyện; muốn đạt 100\%, ứng dụng phải tự chuẩn hoá và lưu thêm một bản văn bản đã bỏ dấu.
 
 % -------------------------------------------------------------------
-\paragraph{Kịch bản I7 -- Chi phí ghi khi có chỉ mục.}
+\paragraph{Kịch bản 6 -- Chi phí ghi khi có chỉ mục.}
 
 \textbf{Mục đích.} Như đã đề cập ở phần lý thuyết, chỉ mục làm đọc nhanh hơn nhưng mỗi lần ghi phải cập nhật thêm chỉ mục. Kịch bản đo thời gian thêm một truyện và cập nhật điểm đánh giá của một truyện khi bảng có 0 và 3 chỉ mục phụ (trên \texttt{RatingAvg}, \texttt{AuthorId} và \texttt{Slug} duy nhất).
 
@@ -374,7 +365,7 @@ Redis & Không chỉ mục & 0,009 & 0,005 \\ \hline
 Redis & 3 chỉ mục tự xây (\texttt{MULTI}) & 0,019 & 0,013 \\ \hline
 Redis & 3 trường RediSearch & 0,037 & 0,021 \\ \hline
 \end{tabular}
-\caption{Kết quả kịch bản I7 (1\,000 truyện)}
+\caption{Kết quả kịch bản 6 (1\,000 truyện)}
 \label{tab:idx-i7}
 \end{table}
 
