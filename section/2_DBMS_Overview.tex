@@ -3,12 +3,50 @@
 
 \subsection{Tổng quan về Microsoft SQL Server}
 \label{subsec:mssql-overview}
-% TODO
+Microsoft SQL Server là hệ quản trị cơ sở dữ liệu quan hệ do Microsoft phát triển. Thành phần cốt lõi là \textit{Database Engine}, cung cấp dịch vụ lưu trữ, xử lý và bảo vệ dữ liệu. Ứng dụng giao tiếp với hệ thống thông qua Transact-SQL (T-SQL), phần mở rộng của SQL, để định nghĩa cấu trúc, truy vấn và cập nhật dữ liệu \cite{mssqldocs}.
+
+\subsubsection{Mô hình dữ liệu và truy vấn}
+Dữ liệu quan hệ được tổ chức thành các bảng gồm hàng và cột. Mỗi cột có kiểu dữ liệu; khoá chính định danh một hàng, còn khoá ngoại biểu diễn mối liên hệ giữa các bảng. Các ràng buộc như \texttt{PRIMARY KEY}, \texttt{FOREIGN KEY}, \texttt{UNIQUE} và \texttt{CHECK} hỗ trợ bảo vệ tính toàn vẹn dữ liệu. Ví dụ, trong Novelle, thông tin truyện và chương được lưu ở các bảng liên quan, cho phép truy xuất chương thuộc một truyện và kiểm tra quan hệ giữa chúng \cite{elmasri2016fundamentals}.
+
+SQL cho phép mô tả dữ liệu cần lấy thông qua các phép lọc, nối, sắp xếp và tổng hợp. Bộ tối ưu truy vấn lựa chọn kế hoạch thực thi dựa trên các phương án truy cập, chỉ mục và thống kê. Chỉ mục giúp tăng tốc một số truy vấn nhưng cũng chiếm dung lượng và cần được cập nhật khi dữ liệu thay đổi \cite{mslearn_indexes}.
+
+\subsubsection{Lưu trữ, giao dịch và phục hồi}
+SQL Server lưu dữ liệu trong các tệp dữ liệu và sử dụng vùng đệm trong bộ nhớ để giảm số lần truy cập đĩa. Transaction log ghi nhận thay đổi phục vụ phục hồi; giao dịch kết hợp với cơ chế khoá và phiên bản hàng nhằm duy trì tính nhất quán khi nhiều yêu cầu cùng hoạt động. Hệ thống hỗ trợ nhiều chiến lược sao lưu và phục hồi, được trình bày chi tiết trong chương nghiên cứu \cite{mslearn_memory_arch,mslearn_transaction_log,mslearn_locking_row_versioning}.
+
+\subsubsection{Vai trò trong Novelle}
+Theo thiết kế ứng dụng, SQL Server là nguồn dữ liệu chính cho các thực thể như tài khoản, truyện, chương, đánh giá và thư viện cá nhân. Các quan hệ, ràng buộc và giao dịch phù hợp với yêu cầu lưu trữ dữ liệu nghiệp vụ lâu dài. Backend truy cập SQL Server thông qua MyBatis và JDBC; môi trường nghiên cứu sử dụng SQL Server 2019 trên Amazon RDS. Chi tiết thiết kế bảng và quan hệ được trình bày tại Chương~3.
 
 \subsection{Tổng quan về Redis}
 \label{subsec:redis-overview}
-% TODO
+Redis là hệ thống lưu trữ dữ liệu theo mô hình key--value, chủ yếu làm việc với dữ liệu trong bộ nhớ. Mỗi key gắn với một giá trị thuộc một cấu trúc dữ liệu cụ thể; ứng dụng thao tác thông qua các lệnh Redis. Khác với mô hình bảng quan hệ, cấu trúc dữ liệu và tên key thường được thiết kế theo những thao tác mà ứng dụng cần thực hiện \cite{redisdocs,carlson2013redis}.
+
+\subsubsection{Cấu trúc dữ liệu và cách truy xuất}
+Redis hỗ trợ nhiều cấu trúc dữ liệu, trong đó \textit{String} phù hợp lưu giá trị hoặc bộ đếm; \textit{Hash} nhóm các trường của một đối tượng; \textit{Set} lưu tập phần tử không trùng; và \textit{Sorted Set} gắn điểm số với phần tử để hỗ trợ sắp xếp. Một key có thể được đặt thời gian sống (TTL), sau đó tự hết hạn. Cách tổ chức này thuận tiện cho cache, bộ đếm và dữ liệu tạm, nhưng yêu cầu ứng dụng chủ động chọn cấu trúc và duy trì các quan hệ cần thiết \cite{redisdocs,redis_sorted_sets}.
+
+\subsubsection{Lưu bền và xử lý đồng thời}
+Dù thao tác chủ yếu trong bộ nhớ, Redis có thể lưu dữ liệu xuống đĩa bằng ảnh chụp RDB, tệp AOF, hoặc kết hợp cả hai. Mức độ bền và lượng dữ liệu có thể mất phụ thuộc cấu hình; không nên coi mọi dữ liệu trong Redis mặc nhiên là dữ liệu tạm hoặc mặc nhiên được bảo toàn. Redis hỗ trợ thực thi nhóm lệnh với \texttt{MULTI/EXEC} và script Lua; khi một lệnh lỗi lúc thực thi, \texttt{MULTI/EXEC} không tự hoàn tác các lệnh thành công trước đó \cite{redis_persistence,redis_transactions}.
+
+\subsubsection{Vai trò trong Novelle}
+Trong thiết kế Novelle, Redis bổ trợ SQL Server bằng các nhóm dữ liệu cần truy cập nhanh hoặc có thời gian sống xác định: cache nội dung, bộ đếm lượt xem chờ đồng bộ, bản nháp tự động lưu, phiên đăng nhập, giới hạn tần suất và khoá ngắn hạn. Các nhóm này có đặc tính mất dữ liệu khác nhau: cache có thể nạp lại từ SQL Server, còn bản nháp chưa lưu và lượt xem chưa đồng bộ có thể bị mất khi xảy ra sự cố. Mục 3.5 mô tả cách đặt tên key, TTL và cơ chế truy xuất cụ thể.
 
 \subsection{So sánh tổng quan MS SQL Server và Redis}
 \label{subsec:mssql-vs-redis}
-% TODO
+SQL Server và Redis được lựa chọn vì giải quyết các nhu cầu khác nhau của ứng dụng. Bảng~\ref{tab:overview-comparison} so sánh các đặc điểm tổng quan; Chương~4 phân tích cơ chế và kết quả thực nghiệm theo từng chủ đề.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{3cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Tiêu chí} & \textbf{Microsoft SQL Server} & \textbf{Redis} \\ \hline
+Mô hình dữ liệu & Quan hệ: bảng, hàng, cột, khoá và ràng buộc. & Key--value với String, Hash, Set, Sorted Set và các cấu trúc khác. \\ \hline
+Truy xuất & T-SQL hỗ trợ truy vấn khai báo, nối bảng và tổng hợp; optimizer chọn kế hoạch thực thi. & Các lệnh thao tác trên key và cấu trúc dữ liệu; cách truy cập phụ thuộc thiết kế key và dữ liệu của ứng dụng. \\ \hline
+Lưu trữ và độ bền & Dữ liệu và log trên lưu trữ bền; dùng bộ đệm trong RAM. & Dữ liệu chủ yếu trong RAM; có thể cấu hình RDB, AOF hoặc kết hợp. \\ \hline
+Toàn vẹn và giao dịch & Ràng buộc quan hệ và giao dịch có hỗ trợ rollback. & Các lệnh và script có tính nguyên tử khi thực thi; \texttt{MULTI/EXEC} không rollback lỗi runtime. \\ \hline
+Vai trò trong Novelle & Lưu dữ liệu nghiệp vụ chính, quan hệ và các truy vấn linh hoạt. & Cache và dữ liệu bổ trợ như bộ đếm, phiên và bản nháp. \\ \hline
+\end{tabularx}
+\caption{So sánh tổng quan SQL Server và Redis trong phạm vi đề tài}
+\label{tab:overview-comparison}
+\end{table}
+
+Sự khác biệt trên là cơ sở cho kiến trúc kết hợp: SQL Server giữ dữ liệu nghiệp vụ chính, trong khi Redis phục vụ các thao tác truy cập nhanh và dữ liệu có vòng đời riêng. Việc kết hợp hai hệ thống đòi hỏi ứng dụng xử lý đồng bộ, hết hạn và phục hồi phù hợp với từng nhóm dữ liệu; không thể suy ra một hệ luôn nhanh hơn hay an toàn hơn trong mọi tình huống chỉ từ mô hình lưu trữ.

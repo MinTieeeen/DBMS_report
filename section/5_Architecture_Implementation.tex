@@ -2,33 +2,1199 @@
 \label{sec:architecture-implementation}
 
 \subsection{Tổng quan công nghệ sử dụng}
-% TODO
+\label{subsec:tech-stack}
+
+Novelle được xây dựng theo mô hình client--server gồm ba phần: ứng dụng web phía client, dịch vụ backend cung cấp REST API, và tầng dữ liệu gồm hai hệ quản trị cơ sở dữ liệu. Bảng~\ref{tab:tech-stack} liệt kê các công nghệ cốt lõi của từng phần.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{4.0cm}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Vai trò} \\ \hline
+\multirow{4}{=}{Frontend}
+ & React 19 & Thư viện xây dựng giao diện theo mô hình component, ứng dụng dạng SPA \\ \cline{2-3}
+ & TypeScript & Ngôn ngữ lập trình có kiểu tĩnh cho toàn bộ mã nguồn phía client \\ \cline{2-3}
+ & Vite & Công cụ chạy môi trường phát triển và đóng gói ứng dụng \\ \cline{2-3}
+ & Tailwind CSS & Định dạng giao diện bằng các lớp tiện ích \\ \hline
+\multirow{4}{=}{Backend}
+ & Java 21 & Ngôn ngữ lập trình phía server \\ \cline{2-3}
+ & Spring Boot 3.5 & Framework xây dựng REST API, gồm Spring Web, Spring Security (xác thực, phân quyền) và Spring Session (lưu phiên đăng nhập trên Redis) \\ \cline{2-3}
+ & MyBatis & Ánh xạ câu lệnh SQL viết tay sang đối tượng Java, cho phép kiểm soát trực tiếp truy vấn gửi tới SQL Server \\ \cline{2-3}
+ & Spring Data Redis & Thư viện truy cập Redis, dùng cho bộ nhớ đệm, bộ đếm lượt xem, bản nháp, giới hạn tần suất và khoá phân tán \\ \hline
+\multirow{2}{=}{Cơ sở dữ liệu}
+ & Microsoft SQL Server 2019 & Hệ quản trị cơ sở dữ liệu quan hệ, lưu trữ chính cho toàn bộ dữ liệu nghiệp vụ \\ \cline{2-3}
+ & Redis Stack 7.4 & Kho dữ liệu key--value trong bộ nhớ, bổ trợ cho các dữ liệu cần truy xuất nhanh hoặc tạm thời \\ \hline
+\end{tabularx}
+\caption{Các công nghệ cốt lõi của hệ thống Novelle}
+\label{tab:tech-stack}
+\end{table}
 
 \subsection{Thiết kế kiến trúc hệ thống}
-% TODO
+\label{subsec:architecture}
 
-\subsection{Thiết kế cơ chế tích hợp hai DBMS}
-% TODO
+\subsubsection{Kiến trúc tổng thể}
+\label{subsubsec:architecture-overview}
+
+Novelle được thiết kế theo kiến trúc client--server nhiều tầng (\emph{n-tier}). Người dùng thao tác trên ứng dụng web chạy trong trình duyệt; ứng dụng này giao tiếp với backend qua REST API dùng định dạng JSON; backend xử lý nghiệp vụ và làm việc với hai hệ quản trị cơ sở dữ liệu là MS SQL Server và Redis. Hình~\ref{fig:component-diagram} mô tả các thành phần chính của hệ thống và cách chúng giao tiếp với nhau.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/component-diagram.png}
+    \caption{Sơ đồ thành phần (component diagram) của hệ thống Novelle}
+    \label{fig:component-diagram}
+\end{figure}
+
+\paragraph{Frontend.} Ứng dụng web được xây dựng dưới dạng SPA (\emph{Single Page Application}): trình duyệt chỉ tải ứng dụng một lần, sau đó mọi thao tác đều được xử lý phía client và chỉ gọi backend để lấy hoặc gửi dữ liệu. Frontend gồm ba thành phần:
+\begin{itemize}
+    \item \textbf{UI Pages \& Components:} các trang và thành phần giao diện cho người đọc, khu vực sáng tác và khu vực quản trị.
+    \item \textbf{Server State (TanStack Query):} quản lý dữ liệu lấy từ server, lưu tạm kết quả và tự làm mới khi dữ liệu thay đổi.
+    \item \textbf{API Client (Axios):} nơi duy nhất gửi yêu cầu HTTP tới backend, kèm cookie phiên đăng nhập và mã chống CSRF.
+\end{itemize}
+
+\paragraph{Backend.} Backend là một ứng dụng Spring Boot, được tổ chức theo các lớp rõ ràng; mỗi yêu cầu đi lần lượt qua từng lớp:
+\begin{itemize}
+    \item \textbf{Security Filter Chain:} kiểm tra phiên đăng nhập, trạng thái tài khoản và quyền truy cập theo vai trò trước khi yêu cầu tới được lớp xử lý.
+    \item \textbf{REST Controllers:} tiếp nhận yêu cầu, kiểm tra dữ liệu đầu vào và trả kết quả dạng JSON.
+    \item \textbf{Services:} chứa logic nghiệp vụ và quản lý giao dịch; quyết định dữ liệu nào đọc từ Redis, dữ liệu nào đọc hoặc ghi xuống SQL Server.
+    \item \textbf{MyBatis Mappers:} thực thi các câu lệnh SQL, thủ tục lưu trữ trên SQL Server và ánh xạ kết quả sang đối tượng Java.
+    \item \textbf{Redis Infrastructure:} tập hợp các thành phần làm việc với Redis gồm bộ nhớ đệm, lưu phiên đăng nhập, bộ đếm lượt xem, bản nháp, giới hạn tần suất và khoá phân tán.
+    \item \textbf{Scheduled Jobs:} các tác vụ chạy định kỳ, như đồng bộ lượt xem từ Redis xuống SQL Server và tự động đăng các chương đã hẹn giờ.
+\end{itemize}
+
+\paragraph{Tầng dữ liệu.} Hai hệ quản trị cơ sở dữ liệu được dùng với vai trò khác nhau:
+\begin{itemize}
+    \item \textbf{MS SQL Server} là nơi lưu trữ chính cho toàn bộ dữ liệu nghiệp vụ; các ràng buộc toàn vẹn, giao dịch, trigger và thủ tục lưu trữ đều nằm ở đây.
+    \item \textbf{Redis} là lớp dữ liệu bổ trợ trong bộ nhớ, giữ những dữ liệu cần truy xuất nhanh hoặc chỉ có giá trị tạm thời. Mất dữ liệu trên Redis không làm hỏng dữ liệu nghiệp vụ trên SQL Server.
+\end{itemize}
+
+\paragraph{Luồng xử lý một yêu cầu.} Khi người dùng mở trang chi tiết một truyện, giao diện gửi yêu cầu qua API Client tới backend. Security Filter Chain xác định người dùng từ phiên lưu trên Redis, sau đó Controller chuyển yêu cầu cho Service tương ứng. Service tìm dữ liệu trong bộ nhớ đệm trên Redis trước; nếu chưa có, Service gọi Mapper truy vấn SQL Server, rồi lưu kết quả vào Redis cho các lần đọc sau. Với các thao tác ghi như đánh giá hay đăng chương, Service ghi xuống SQL Server trong một giao dịch, sau đó xoá các khoá đệm liên quan trên Redis để dữ liệu hiển thị luôn được cập nhật.
+
+\subsubsection{Sơ đồ gói (Package diagram)}
+\label{subsubsec:package-diagram}
+
+Mã nguồn của Novelle được tổ chức thành hai dự án: \texttt{novelle\_frontend} và \texttt{novelle\_backend}. Mỗi dự án được chia thành các gói (package) theo lớp kỹ thuật; quan hệ phụ thuộc giữa các gói được thể hiện ở Hình~\ref{fig:package-diagram}, trong đó mũi tên nét đứt đi từ gói sử dụng tới gói được sử dụng.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/package-diagram.png}
+    \caption{Sơ đồ gói của hệ thống Novelle}
+    \label{fig:package-diagram}
+\end{figure}
+
+\paragraph{Các gói của frontend.}
+\begin{itemize}
+    \item \texttt{app}: điểm khởi tạo ứng dụng, khai báo bộ định tuyến (router) và các provider dùng chung.
+    \item \texttt{pages}: các trang ứng với từng đường dẫn, chia theo khu vực người đọc, tài khoản, khu vực sáng tác và khu vực quản trị.
+    \item \texttt{components}: các thành phần giao diện tái sử dụng, nhóm theo chức năng (truyện, đọc chương, thư viện, sáng tác, quản trị) và bộ thành phần giao diện cơ bản.
+    \item \texttt{layouts}: khung bố cục chung của từng khu vực (thanh điều hướng, thanh bên, chân trang).
+    \item \texttt{hooks}: các hook React đóng gói việc gọi API, quản lý trạng thái và xử lý thao tác của người dùng.
+    \item \texttt{api}: các hàm gọi REST API của backend, nhóm theo module nghiệp vụ, dùng chung một HTTP client.
+    \item \texttt{auth}: quản lý trạng thái đăng nhập và chặn truy cập các trang theo vai trò.
+    \item \texttt{types}, \texttt{lib}, \texttt{utils}: kiểu dữ liệu TypeScript dùng chung và các hàm tiện ích.
+\end{itemize}
+
+\paragraph{Các gói của backend.}
+\begin{itemize}
+    \item \texttt{controller}: các REST controller nhận yêu cầu và trả kết quả JSON.
+    \item \texttt{service}: logic nghiệp vụ và quản lý giao dịch.
+    \item \texttt{mapper}: các MyBatis mapper chứa câu lệnh SQL và lời gọi thủ tục lưu trữ trên SQL Server.
+    \item \texttt{model}: các đối tượng nhận kết quả truy vấn từ cơ sở dữ liệu.
+    \item \texttt{dto}: các đối tượng dữ liệu vào/ra của API kèm quy tắc kiểm tra hợp lệ.
+    \item \texttt{exception}: mã lỗi, ngoại lệ và bộ xử lý lỗi tập trung.
+    \item \texttt{config}: cấu hình bảo mật, CORS, lịch chạy tác vụ và tài liệu API.
+    \item \texttt{infrastructure}: các thành phần hạ tầng dùng chung, gồm \texttt{security} (phiên đăng nhập, kiểm tra trạng thái tài khoản), \texttt{ratelimit} (giới hạn tần suất), \texttt{cache} (bộ nhớ đệm, bản nháp, khoá phân tán trên Redis), \texttt{views} (đếm và đồng bộ lượt xem), \texttt{jobs} (tác vụ đăng chương hẹn giờ), \texttt{html} (làm sạch HTML, đếm chữ, sinh slug) và \texttt{mybatis} (bộ chuyển đổi kiểu dữ liệu đặc thù của SQL Server).
+\end{itemize}
+
+Các gói phụ thuộc một chiều theo lớp: \texttt{controller} $\rightarrow$ \texttt{service} $\rightarrow$ \texttt{mapper} $\rightarrow$ \texttt{model}. Gói \texttt{api} của frontend là nơi duy nhất giao tiếp với backend, thông qua các endpoint do \texttt{controller} cung cấp.
+
+% ===================================================================
+\subsection{Thiết kế các thành phần hệ thống}
+\label{subsec:system-components}
+
+Nếu sơ đồ gói chia hệ thống theo lớp kỹ thuật, thì theo chiều nghiệp vụ, Novelle được phân rã thành tám module. Mỗi module phục vụ một nhóm chức năng, có phần giao diện riêng ở frontend, nhóm endpoint riêng ở backend và làm việc với một tập bảng xác định. Bảng~\ref{tab:system-modules} tóm tắt các module; trách nhiệm chi tiết của từng module được trình bày ngay sau đó.
+
+{\small
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{1.9cm}|>{\raggedright\arraybackslash}p{5.2cm}|>{\raggedright\arraybackslash}p{5.2cm}|}
+\caption{Các module nghiệp vụ của hệ thống Novelle}\label{tab:system-modules}\\
+\hline
+\textbf{Module} & \textbf{Chức năng} & \textbf{Nhóm endpoint} & \textbf{Dữ liệu chính} \\ \hline
+\endfirsthead
+\hline
+\textbf{Module} & \textbf{Chức năng} & \textbf{Nhóm endpoint} & \textbf{Dữ liệu chính} \\ \hline
+\endhead
+Nền tảng & -- & -- & Phiên đăng nhập, bộ đếm giới hạn tần suất (Redis) \\ \hline
+Tài khoản & Đăng ký, đăng nhập, hồ sơ & \texttt{/api/auth}, \texttt{/api/me}, \texttt{/api/users} & \texttt{User}, \texttt{Author} \\ \hline
+Danh mục \& truyện & F1, F2, F3 & \texttt{/api/home}, \texttt{/api/genres}, \texttt{/api/tags}, \texttt{/api/stories}, \texttt{/api/authors} & \texttt{Story}, \texttt{Genre}, \texttt{Tag}, \texttt{Volume}, \texttt{Chapter}, \texttt{Author} \\ \hline
+Đọc truyện & F4 & \texttt{/api/chapters}, \texttt{/api/reading-progress} & \texttt{Chapter}, \texttt{ReadingHistory}, \texttt{StoryViewDaily} \\ \hline
+Thư viện \& đánh giá & F5, F6 & \texttt{/api/library}, \texttt{/api/reading-lists}, \texttt{.../follow}, \texttt{.../ratings} & \texttt{Follow}, \texttt{AuthorFollow}, \texttt{ReadingList}, \texttt{ReadingListItem}, \texttt{Rating} \\ \hline
+Yêu cầu tác giả & F7, F11 & \texttt{/api/author-requests}, \texttt{/api/admin/author-requests} & \texttt{AuthorRequest}, \texttt{Author}, \texttt{User} \\ \hline
+Studio sáng tác & F8, F9, F10 & \texttt{/api/studio/**} & \texttt{Story}, \texttt{Volume}, \texttt{Chapter}, \texttt{ChapterRevision}, \texttt{StoryViewDaily} \\ \hline
+Quản trị & F11, F12, F13 & \texttt{/api/admin/**} & Tất cả các bảng \\ \hline
+\end{longtable}
+}
+
+\paragraph{Module Nền tảng.} Cung cấp các cơ chế dùng chung cho mọi module khác: lưu phiên đăng nhập trên Redis, kiểm tra trạng thái tài khoản ở mỗi yêu cầu, phân quyền theo vai trò, giới hạn tần suất các thao tác nhạy cảm, mô hình lỗi thống nhất cho toàn bộ API và bộ nhớ đệm dùng chung. Ở frontend, module này gồm HTTP client, cơ chế lưu trữ trạng thái dữ liệu từ server và bộ chặn truy cập theo vai trò.
+
+\paragraph{Module Tài khoản.} Chịu trách nhiệm đăng ký tài khoản (mặc định là người đọc), đăng nhập bằng tên đăng nhập hoặc email, đăng xuất, xem và sửa hồ sơ cá nhân, đổi mật khẩu và hiển thị hồ sơ công khai. Mật khẩu được băm bằng BCrypt; việc sửa hồ sơ dùng khoá lạc quan để phát hiện chỉnh sửa đồng thời. Khi vai trò của người dùng thay đổi (được duyệt làm tác giả) hoặc tài khoản bị khoá, thay đổi có hiệu lực ngay ở yêu cầu kế tiếp.
+
+\paragraph{Module Danh mục \& truyện.} Phục vụ toàn bộ phần đọc công khai: trang chủ với các danh sách truyện, danh sách thể loại và gợi ý thẻ, tìm kiếm toàn văn kết hợp bộ lọc nhiều điều kiện, trang chi tiết truyện kèm mục lục theo tập, và trang tác giả. Module này chỉ đọc dữ liệu, luôn ẩn truyện chưa công khai và chương chưa đăng, và dùng bộ nhớ đệm Redis cho trang chủ, danh sách thể loại và chi tiết truyện.
+
+\paragraph{Module Đọc truyện.} Trả nội dung chương cùng liên kết chương trước và chương sau, ghi nhận lượt xem và lưu vị trí đọc của người dùng. Lượt xem được đếm trên Redis, chống tính trùng trong 30 phút, rồi được tác vụ định kỳ đồng bộ xuống SQL Server mỗi 60 giây. Nội dung chương đã đăng được lưu đệm trên Redis.
+
+\paragraph{Module Thư viện \& đánh giá.} Quản lý các hoạt động cá nhân của người đọc: lịch sử đọc, theo dõi truyện và tác giả, tủ truyện (tạo, sửa, xoá, thêm truyện, sắp xếp thứ tự) và đánh giá truyện. Các số liệu tổng hợp như lượt theo dõi và điểm trung bình được trigger trên SQL Server cập nhật; sau mỗi thao tác ghi, module xoá bộ nhớ đệm của truyện liên quan.
+
+\paragraph{Module Yêu cầu tác giả.} Cho phép người đọc gửi, theo dõi và huỷ yêu cầu trở thành tác giả, và cho phép quản trị viên xem hàng đợi, duyệt hoặc từ chối yêu cầu. Việc duyệt được thực hiện trong một thủ tục lưu trữ: đổi trạng thái yêu cầu, đổi vai trò tài khoản và tạo hồ sơ tác giả trong cùng một giao dịch, đồng thời bảo đảm mỗi yêu cầu chỉ được xử lý một lần kể cả khi hai quản trị viên thao tác cùng lúc.
+
+\paragraph{Module Studio sáng tác.} Khu vực làm việc của tác giả, gồm ba phần:
+\begin{itemize}
+    \item \textbf{Quản lý truyện:} tạo, sửa, công khai, chuyển về bản nháp, xoá truyện; gán thể loại, thẻ; cập nhật hồ sơ tác giả.
+    \item \textbf{Viết chương:} quản lý tập và chương, tự động lưu bản nháp lên Redis, lưu chương với khoá lạc quan, đăng ngay hoặc hẹn giờ đăng, xem và khôi phục các phiên bản cũ.
+    \item \textbf{Thống kê tác giả:} số liệu tổng quan, lượt xem theo ngày hoặc tháng, thống kê từng truyện và người theo dõi.
+\end{itemize}
+Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập.
+
+\paragraph{Module Quản trị.} Dành cho quản trị viên, gồm quản lý người dùng (tìm kiếm, khoá, mở khoá, tạo quản trị viên, cấp dấu xác minh), kiểm duyệt nội dung (ẩn, hiện, xoá truyện; xoá nhận xét vi phạm), quản lý thể loại và thẻ, và thống kê toàn hệ thống. Các truy vấn thống kê dùng nhiều phép tổng hợp và truy vấn con, kết quả được lưu đệm ngắn hạn trên Redis.
 
 \subsection{Hiện thực ứng dụng}
+\label{subsec:implementation}
 
 \subsubsection{Cấu trúc mã nguồn}
-% TODO
+\label{subsubsec:source-structure}
 
-\subsubsection{Hiện thực Backend}
-% TODO
+\begin{tcolorbox}[colback=blue!6, colframe=blue!60!black, boxrule=0.8pt, arc=2mm, left=4mm, right=4mm, top=2mm, bottom=2mm]
+\textbf{Mã nguồn dự án:} \url{https://github.com/MinTieeeen/novelle}
+\end{tcolorbox}
 
-\subsubsection{Tích hợp MS SQL Server}
-% TODO
+\paragraph{Frontend.} Mã nguồn frontend nằm trong thư mục \texttt{src/}, chia theo vai trò kỹ thuật. Các trang và thành phần giao diện được nhóm theo khu vực chức năng: người đọc, tài khoản, khu vực sáng tác và khu vực quản trị.
 
-\subsubsection{Tích hợp Redis}
-% TODO
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_frontend/
+|-- src/
+|   |-- app/          Khởi tạo ứng dụng, router, provider
+|   |-- pages/        Các trang: reader/, account/, studio/, admin/
+|   |-- components/   Thành phần giao diện theo chức năng và bộ UI cơ bản
+|   |-- layouts/      Bố cục chung của từng khu vực
+|   |-- hooks/        Hook đóng gói thao tác và gọi API
+|   |-- api/          Hàm gọi REST API, mỗi tệp ứng với một module nghiệp vụ
+|   |-- auth/         Trạng thái đăng nhập, chặn truy cập theo vai trò
+|   |-- types/        Kiểu dữ liệu TypeScript dùng chung
+|   `-- lib/, utils/  Hàm tiện ích
+|-- public/           Tài nguyên tĩnh (ảnh bìa, biểu tượng)
+\end{minted}
 
-\subsubsection{Hiện thực Frontend}
-% TODO
+\paragraph{Backend.} Backend là một dự án Maven. Mã Java nằm trong gói gốc \texttt{com.novelle} và được chia theo lớp; câu lệnh SQL không viết trong mã Java mà tách ra các tệp XML của MyBatis, và các script Lua dùng cho Redis cũng được đặt riêng trong thư mục tài nguyên.
 
-\subsubsection{Triển khai ứng dụng}
-% TODO
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_backend/
+|-- src/main/java/com/novelle/
+|   |-- controller/        REST controller
+|   |-- service/           Logic nghiệp vụ, quản lý giao dịch
+|   |-- mapper/            Interface MyBatis mapper
+|   |-- model/             Đối tượng nhận kết quả truy vấn
+|   |-- dto/               Đối tượng dữ liệu vào/ra của API
+|   |-- exception/         Mã lỗi và xử lý lỗi tập trung
+|   |-- config/            Cấu hình bảo mật, CORS, lịch tác vụ
+|   `-- infrastructure/    Hạ tầng: security, ratelimit, cache, views, jobs, html, mybatis
+|-- src/main/resources/
+|   |-- mapper/            Câu lệnh SQL của từng mapper (XML)
+|   |-- redis/             Script Lua thực thi nguyên tử trên Redis
+|-- scripts/               Script chạy nạp dữ liệu mẫu
+\end{minted}
 
-\subsection{Minh họa các chức năng chính}
-% TODO: chèn ảnh chụp màn hình vào image/chapter5/
+\paragraph{Cơ sở dữ liệu.} Novelle không dùng công cụ migration; toàn bộ cơ sở dữ liệu trên SQL Server được tạo và khởi tạo bằng các script SQL, đánh số theo thứ tự chạy. Ứng dụng chỉ đọc và ghi dữ liệu, không tự thay đổi lược đồ.
+
+\begin{minted}[fontsize=\small,frame=single]{text}
+novelle_backend/database/
+|-- bootstrap/                 Chạy một lần với quyền quản trị
+|   |-- 00_create_database.sql      Tạo cơ sở dữ liệu NovelleDB
+|   `-- 01_create_logins_users.sql  Tạo tài khoản đăng nhập và phân quyền
+|-- schema/                    Định nghĩa lược đồ
+|   |-- 01_tables.sql               18 bảng, khoá chính, khoá ngoại, CHECK
+|   |-- 02_indexes.sql              Chỉ mục
+|   |-- 03_fulltext.sql             Chỉ mục toàn văn
+|   |-- 04_views.sql                View
+|   |-- 05_procedures.sql           Thủ tục lưu trữ
+|   |-- 06_triggers.sql             Trigger
+|   `-- 07_reference_data.sql       Dữ liệu danh mục cố định (thể loại)
+|-- seed/                      Sinh dữ liệu mẫu (10_ ... 90_)
+`-- queries/                   Truy vấn kiểm tra và kịch bản minh hoạ
+\end{minted}
+
+Các script trong \texttt{schema/} đều có thể chạy lại nhiều lần: bảng chỉ được tạo khi chưa tồn tại, còn view, thủ tục và trigger dùng \texttt{CREATE OR ALTER}. Sau khi nạp dữ liệu mẫu, script \texttt{queries/99\_check\_invariants.sql} được chạy để kiểm tra các giá trị dẫn xuất và ràng buộc nghiệp vụ còn đúng.
+
+% Ảnh chụp màn hình: nếu tệp đã có trong image/chapter5/ thì chèn ảnh, nếu chưa có thì hiện khung giữ chỗ.
+\providecommand{\screenshot}[3]{%
+\begin{figure}[H]
+    \centering
+    \IfFileExists{image/chapter5/#1}{%
+        \includegraphics[width=0.9\textwidth]{image/chapter5/#1}%
+    }{%
+        \fbox{\parbox[c][5cm][c]{0.85\textwidth}{\centering\small\textit{Ảnh chụp màn hình}\\[2pt]\texttt{image/chapter5/#1}}}%
+    }
+    \caption{#2}
+    \label{#3}
+\end{figure}}
+
+% ===================================================================
+\subsection{Hiện thực các chức năng của hệ thống}
+\label{subsec:features}
+
+% -------------------------------------------------------------------
+\subsubsection{Module Danh mục \& truyện}
+\label{subsubsec:feature-catalog}
+
+\paragraph{Mô tả chức năng.} Module phục vụ toàn bộ phần khám phá truyện công khai, gồm các yêu cầu chức năng nhóm FR-2 và FR-3:
+\begin{itemize}
+    \item \textbf{Trang chủ:} năm danh sách truyện, mỗi danh sách tối đa 12 truyện: mới cập nhật, mới đăng, đánh giá cao (chỉ xét truyện có từ 10 lượt đánh giá), xem nhiều và đã hoàn thành.
+    \item \textbf{Danh mục:} danh sách thể loại kèm số truyện công khai của từng thể loại, và gợi ý thẻ theo tiền tố khi người dùng gõ.
+    \item \textbf{Tìm kiếm và lọc:} tìm toàn văn theo tên và phần giới thiệu (không phân biệt dấu thanh, hoa thường), kết hợp tự do với các bộ lọc thể loại, thẻ, tình trạng, giới hạn độ tuổi, khoảng số chương, điểm tối thiểu; sắp xếp theo thời gian cập nhật, thời gian đăng, lượt xem, điểm, lượt theo dõi hoặc mức độ liên quan; phân trang.
+    \item \textbf{Chi tiết truyện:} thông tin truyện, tác giả, thể loại (thể loại chính đứng đầu), thẻ và mục lục các chương đã đăng, nhóm theo tập.
+    \item \textbf{Trang tác giả:} hồ sơ công khai, thống kê tổng hợp trên các truyện đã công khai và danh sách truyện của tác giả.
+\end{itemize}
+Module chỉ đọc dữ liệu. Mọi truy vấn đều đi qua view \texttt{vw\_PublicStory}, vốn chỉ chứa truyện ở trạng thái \texttt{PUBLISHED} và chưa bị xoá, nên truyện nháp, truyện bị ẩn và chương chưa đăng không bao giờ xuất hiện ở trang công khai. Trang chủ, danh sách thể loại và chi tiết truyện được lưu đệm trên Redis lần lượt trong 2 phút, 1 giờ và 10 phút; chức năng tìm kiếm bị giới hạn 60 lần mỗi phút trên một địa chỉ IP.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-catalog-home} mô tả luồng tải trang chủ theo cơ chế cache-aside: dữ liệu được đọc từ Redis trước, chỉ khi chưa có mới truy vấn năm danh sách truyện trên SQL Server rồi ghi lại vào Redis.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_catalog_home.png}
+    \caption{Sơ đồ tuần tự tải trang chủ}
+    \label{fig:seq-catalog-home}
+\end{figure}
+
+Hình~\ref{fig:seq-catalog-search} mô tả luồng tìm kiếm. Yêu cầu được kiểm tra giới hạn tần suất trên Redis trước, sau đó service chuẩn hoá từ khoá, đếm tổng số kết quả và chỉ truy vấn trang dữ liệu khi có kết quả.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_catalog_search.png}
+    \caption{Sơ đồ tuần tự tìm kiếm và lọc truyện}
+    \label{fig:seq-catalog-search}
+\end{figure}
+
+Hình~\ref{fig:seq-catalog-detail} mô tả luồng xem chi tiết truyện. Service luôn kiểm tra truyện còn công khai trên SQL Server trước khi dùng bộ nhớ đệm, để truyện vừa bị ẩn không còn hiển thị dù khoá đệm chưa hết hạn.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_catalog_detail.png}
+    \caption{Sơ đồ tuần tự xem chi tiết truyện}
+    \label{fig:seq-catalog-detail}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Danh sách thể loại kèm số truyện công khai} (truy vấn kết nối ngoài và hàm tổng hợp):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT g.GenreId, g.Name, g.Slug, g.Description,
+       COUNT(s.StoryId) AS StoryCount
+FROM dbo.Genre g
+LEFT JOIN dbo.StoryGenre sg    ON sg.GenreId = g.GenreId
+LEFT JOIN dbo.vw_PublicStory s ON s.StoryId  = sg.StoryId
+GROUP BY g.GenreId, g.Name, g.Slug, g.Description, g.SortOrder
+ORDER BY g.SortOrder, g.GenreId;
+\end{minted}
+
+\textit{Một khối trang chủ: truyện đã hoàn thành, mới cập nhật trước} (truy vấn một điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT TOP (12) s.StoryId, s.Slug, s.Title, LEFT(s.Description, 300) AS Description,
+       s.CoverUrl, s.CompletionStatus, s.ChapterCount, s.ViewCount, s.RatingAvg,
+       s.LastChapterAt, s.AuthorId, s.AuthorName,
+       g.GenreId, g.Name AS GenreName, g.Slug AS GenreSlug
+FROM dbo.vw_PublicStory s
+LEFT JOIN dbo.StoryGenre pg ON pg.StoryId = s.StoryId AND pg.IsPrimary = 1
+LEFT JOIN dbo.Genre g       ON g.GenreId  = pg.GenreId
+WHERE s.CompletionStatus = 'COMPLETED'
+ORDER BY s.LastChapterAt DESC, s.StoryId DESC;
+\end{minted}
+
+\textit{Tìm kiếm với từ khoá và nhiều bộ lọc} (truy vấn nhiều điều kiện, truy vấn con, tìm kiếm toàn văn). Mỗi từ khoá được tìm bằng một \texttt{CONTAINSTABLE} riêng; truyện phải khớp đủ mọi từ khoá và đủ mọi thể loại được chọn. Ví dụ với hai từ khoá và hai thể loại:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Slug, s.Title, s.CoverUrl, s.ChapterCount, s.RatingAvg,
+       s.LastChapterAt, s.AuthorName
+FROM dbo.vw_PublicStory s
+JOIN (
+    SELECT m.[KEY], SUM(m.[RANK]) AS [RANK]
+    FROM (
+        SELECT [KEY], [RANK], 0 AS TermNo
+        FROM CONTAINSTABLE(dbo.Story, (Title, Description), @term1)
+        UNION ALL
+        SELECT [KEY], [RANK], 1 AS TermNo
+        FROM CONTAINSTABLE(dbo.Story, (Title, Description), @term2)
+    ) m
+    GROUP BY m.[KEY]
+    HAVING COUNT(DISTINCT m.TermNo) = 2
+) ft ON ft.[KEY] = s.StoryId
+WHERE s.CompletionStatus = @completionStatus
+  AND s.ChapterCount >= @minChapters
+  AND s.RatingAvg    >= @minRating
+  AND s.StoryId IN (
+        SELECT sg.StoryId
+        FROM dbo.StoryGenre sg
+        JOIN dbo.Genre gg ON gg.GenreId = sg.GenreId
+        WHERE gg.Slug IN (@genre1, @genre2)
+        GROUP BY sg.StoryId
+        HAVING COUNT(DISTINCT sg.GenreId) = 2)
+ORDER BY ft.[RANK] DESC, s.StoryId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+Câu đếm tổng số kết quả dùng cùng phần \texttt{FROM}, \texttt{JOIN} và \texttt{WHERE}, chỉ thay danh sách cột bằng \texttt{COUNT(*)} và bỏ phần sắp xếp, phân trang.
+
+\textit{Chi tiết truyện kèm tác giả} (truy vấn kết nối):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Slug, s.Title, s.Description, s.CoverUrl, s.CompletionStatus,
+       s.AgeRating, s.ChapterCount, s.WordCount, s.ViewCount, s.FollowCount,
+       s.RatingAvg, s.RatingCount, s.LastChapterAt, s.PublishedAt,
+       a.UserId AS AuthorId, a.PenName, a.IsVerified
+FROM dbo.vw_PublicStory s
+JOIN dbo.Author a ON a.UserId = s.AuthorId
+WHERE s.StoryId = @storyId;
+\end{minted}
+
+\textit{Mục lục theo tập} (truy vấn kết nối nhiều điều kiện, chỉ lấy chương đã đăng):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT v.VolumeId, v.VolumeNo, v.Title AS VolumeTitle,
+       ch.ChapterId, ch.ChapterNo, ch.Title AS ChapterTitle, ch.PublishedAt
+FROM dbo.Volume v
+JOIN dbo.Chapter ch ON ch.VolumeId  = v.VolumeId
+                   AND ch.StoryId   = v.StoryId
+                   AND ch.Status    = 'PUBLISHED'
+                   AND ch.IsDeleted = 0
+WHERE v.StoryId = @storyId
+ORDER BY v.VolumeNo, ch.ChapterNo;
+\end{minted}
+
+\textit{Hồ sơ tác giả kèm thống kê trên các truyện đã công khai} (truy vấn con với \texttt{CROSS APPLY} và hàm tổng hợp; điểm trung bình được tính có trọng số theo số lượt đánh giá):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT a.UserId AS AuthorId, a.PenName, a.Bio, u.AvatarUrl, a.IsVerified,
+       a.FollowerCount, a.CreatedAt AS AuthorSince,
+       st.StoryCount, st.ChapterCount, st.ViewCount, st.RatingCount, st.RatingAvg
+FROM dbo.Author a
+JOIN dbo.[User] u ON u.UserId = a.UserId
+CROSS APPLY (
+    SELECT COUNT(*)                                         AS StoryCount,
+           COALESCE(SUM(CAST(p.ChapterCount AS BIGINT)), 0) AS ChapterCount,
+           COALESCE(SUM(p.ViewCount), 0)                    AS ViewCount,
+           COALESCE(SUM(CAST(p.RatingCount AS BIGINT)), 0)  AS RatingCount,
+           COALESCE(CAST(SUM(CAST(p.RatingAvg AS DECIMAL(18,4)) * p.RatingCount)
+                         / NULLIF(SUM(CAST(p.RatingCount AS DECIMAL(18,4))), 0)
+                    AS DECIMAL(3,2)), 0)                    AS RatingAvg
+    FROM dbo.vw_PublicStory p
+    WHERE p.AuthorId = a.UserId
+) st
+WHERE a.UserId = @authorId;
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{catalog-home.png}{Giao diện trang chủ}{fig:ui-catalog-home}
+\screenshot{catalog-search.png}{Giao diện tìm kiếm và lọc truyện}{fig:ui-catalog-search}
+\screenshot{catalog-story-detail.png}{Giao diện chi tiết truyện và mục lục}{fig:ui-catalog-detail}
+\screenshot{catalog-author.png}{Giao diện trang tác giả}{fig:ui-catalog-author}
+
+% -------------------------------------------------------------------
+\subsubsection{Module Đọc truyện}
+\label{subsubsec:feature-reading}
+
+\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-4:
+\begin{itemize}
+    \item \textbf{Đọc chương:} trả về tên chương, nội dung, số chữ, ngày đăng, lượt xem, thông tin truyện, tập (nếu có) và mã của chương liền trước, liền sau trong số các chương đã đăng. Chương nháp, chương hẹn giờ, chương đã xoá hoặc thuộc truyện không công khai đều trả về cùng một lỗi \texttt{404}.
+    \item \textbf{Ghi nhận lượt xem:} mỗi lần đọc thành công tăng một lượt xem cho chương và cho truyện theo ngày (giờ Việt Nam). Một người xem (theo tài khoản, hoặc theo địa chỉ IP nếu chưa đăng nhập) chỉ được tính một lượt cho mỗi chương trong 30 phút.
+    \item \textbf{Đồng bộ lượt xem:} lượt xem được đếm trên Redis; mỗi 60 giây, một tác vụ định kỳ gom các bộ đếm và cộng dồn xuống SQL Server trong một giao dịch.
+    \item \textbf{Lưu vị trí đọc:} khi thành viên mở chương, hệ thống tự ghi lại chương đang đọc; trong lúc đọc, giao diện gửi thêm vị trí cuộn (0--100\%). Mỗi người chỉ có một vị trí đọc cho mỗi truyện, và chương được lưu phải thuộc đúng truyện đó.
+    \item \textbf{Đọc tiếp:} trả về chương và vị trí cuộn đã lưu; nếu chương đó không còn công khai thì coi như chưa có vị trí đọc.
+\end{itemize}
+Nội dung chương (cột \texttt{NVARCHAR(MAX)}, là phần dữ liệu lớn nhất) được lưu đệm trên Redis trong 30 phút, còn thông tin điều hướng và trạng thái công khai luôn được đọc trực tiếp từ SQL Server. Chức năng lưu vị trí đọc bị giới hạn 120 lần mỗi phút trên một tài khoản.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-reading-chapter} mô tả luồng đọc một chương. Service kiểm tra chương còn công khai trên SQL Server trước, sau đó lấy nội dung qua bộ nhớ đệm, cập nhật vị trí đọc nếu người dùng đã đăng nhập, và ghi nhận lượt xem trên Redis bằng một script Lua thực thi nguyên tử.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_reading_chapter.png}
+    \caption{Sơ đồ tuần tự đọc một chương}
+    \label{fig:seq-reading-chapter}
+\end{figure}
+
+Hình~\ref{fig:seq-reading-progress} mô tả luồng lưu vị trí đọc. Trước khi ghi, service kiểm tra truyện và chương còn công khai và chương thuộc đúng truyện trong yêu cầu.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_reading_progress.png}
+    \caption{Sơ đồ tuần tự lưu vị trí đọc}
+    \label{fig:seq-reading-progress}
+\end{figure}
+
+Hình~\ref{fig:seq-reading-flush} mô tả tác vụ đồng bộ lượt xem. Các bộ đếm được lấy ra và xoá khỏi Redis trong cùng một script; nếu giao dịch trên SQL Server thất bại, các giá trị được cộng trả lại Redis để lần chạy sau đồng bộ tiếp, nên không mất lượt xem.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_reading_flush.png}
+    \caption{Sơ đồ tuần tự đồng bộ lượt xem từ Redis xuống SQL Server}
+    \label{fig:seq-reading-flush}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Thông tin chương kèm chương liền trước, liền sau} (truy vấn kết nối, nhiều điều kiện và hai truy vấn con tương quan):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT ch.ChapterId, ch.ChapterNo, ch.ViewCount, ch.StoryId,
+       s.Slug AS StorySlug, s.Title AS StoryTitle, s.AuthorId, s.AuthorName,
+       v.VolumeId, v.VolumeNo, v.Title AS VolumeTitle,
+       (SELECT TOP (1) p.ChapterId
+        FROM dbo.Chapter p
+        WHERE p.StoryId = ch.StoryId AND p.ChapterNo < ch.ChapterNo
+          AND p.Status = 'PUBLISHED' AND p.IsDeleted = 0
+        ORDER BY p.ChapterNo DESC) AS PrevChapterId,
+       (SELECT TOP (1) n.ChapterId
+        FROM dbo.Chapter n
+        WHERE n.StoryId = ch.StoryId AND n.ChapterNo > ch.ChapterNo
+          AND n.Status = 'PUBLISHED' AND n.IsDeleted = 0
+        ORDER BY n.ChapterNo ASC) AS NextChapterId
+FROM dbo.Chapter ch
+JOIN dbo.vw_PublicStory s ON s.StoryId  = ch.StoryId
+LEFT JOIN dbo.Volume v    ON v.VolumeId = ch.VolumeId
+WHERE ch.ChapterId = @chapterId
+  AND ch.Status = 'PUBLISHED'
+  AND ch.IsDeleted = 0;
+\end{minted}
+
+\textit{Nội dung chương}, chỉ đọc khi bộ nhớ đệm chưa có (truy vấn một điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT Title, Content, WordCount, PublishedAt
+FROM dbo.Chapter
+WHERE ChapterId = @chapterId;
+\end{minted}
+
+\textit{Lưu vị trí đọc} (thêm mới hoặc cập nhật trong một câu lệnh). Gợi ý \texttt{HOLDLOCK} giữ khoá trên khoảng khoá từ lúc tìm tới lúc ghi, để hai tab cùng mở truyện lần đầu không cùng chèn một dòng:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+MERGE dbo.ReadingHistory WITH (HOLDLOCK) AS t
+USING (SELECT @userId AS UserId, @storyId AS StoryId, @chapterId AS ChapterId,
+              CAST(@scrollPercent AS DECIMAL(5,2)) AS Scroll) AS src
+   ON t.UserId = src.UserId AND t.StoryId = src.StoryId
+WHEN MATCHED THEN
+    UPDATE SET LastChapterId = src.ChapterId,
+               ScrollPercent = src.Scroll,
+               UpdatedAt     = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (UserId, StoryId, LastChapterId, ScrollPercent)
+    VALUES (src.UserId, src.StoryId, src.ChapterId, src.Scroll);
+\end{minted}
+
+\textit{Vị trí đọc tiếp}, chỉ khi chương đã lưu còn công khai (truy vấn kết nối):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT h.StoryId, h.LastChapterId AS ChapterId, ch.ChapterNo,
+       ch.Title AS ChapterTitle, h.ScrollPercent, h.UpdatedAt
+FROM dbo.ReadingHistory h
+JOIN dbo.Chapter ch ON ch.ChapterId = h.LastChapterId
+                   AND ch.Status = 'PUBLISHED' AND ch.IsDeleted = 0
+WHERE h.UserId = @userId AND h.StoryId = @storyId;
+\end{minted}
+
+\textit{Đồng bộ lượt xem} trong thủ tục \texttt{sp\_FlushViews}. Danh sách lượt xem từ Redis được truyền vào dưới dạng tham số bảng \texttt{@Deltas}; các câu lệnh dưới đây chạy trong cùng một giao dịch (cập nhật có kết nối, hàm tổng hợp và \texttt{MERGE}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE s
+SET ViewCount = s.ViewCount + d.Total
+FROM dbo.Story s
+JOIN (SELECT TargetId, SUM(CAST(Delta AS BIGINT)) AS Total
+      FROM @Deltas WHERE TargetType = 'S'
+      GROUP BY TargetId) d ON d.TargetId = s.StoryId;
+
+-- câu UPDATE tương tự cho dbo.Chapter với TargetType = 'C'
+
+MERGE dbo.StoryViewDaily WITH (HOLDLOCK) AS t
+USING (SELECT s.StoryId, d.ViewDate, SUM(d.Delta) AS Delta
+       FROM @Deltas d
+       JOIN dbo.Story s ON s.StoryId = d.TargetId
+       WHERE d.TargetType = 'S'
+       GROUP BY s.StoryId, d.ViewDate) AS src
+   ON t.StoryId = src.StoryId AND t.ViewDate = src.ViewDate
+WHEN MATCHED THEN
+    UPDATE SET Views = t.Views + src.Delta
+WHEN NOT MATCHED THEN
+    INSERT (StoryId, ViewDate, Views) VALUES (src.StoryId, src.ViewDate, src.Delta);
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{reading-chapter.png}{Giao diện đọc chương}{fig:ui-reading-chapter}
+\screenshot{reading-navigation.png}{Điều hướng mục lục và chuyển chương trong trang đọc}{fig:ui-reading-nav}
+\screenshot{reading-continue.png}{Nút đọc tiếp từ vị trí đã lưu trên trang chi tiết truyện}{fig:ui-reading-continue}
+
+\subsubsection{Module Thư viện \& đánh giá}
+\label{subsubsec:feature-library}
+
+\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-5 và FR-6, gồm các hoạt động cá nhân của người đọc:
+\begin{itemize}
+    \item \textbf{Lịch sử đọc:} danh sách truyện đã đọc, mới đọc trước, kèm chương đọc gần nhất và vị trí cuộn; người dùng có thể xoá từng truyện khỏi lịch sử.
+    \item \textbf{Theo dõi truyện và tác giả:} theo dõi hoặc bỏ theo dõi, xem trạng thái theo dõi, xem danh sách truyện đang theo dõi (sắp theo chương mới nhất) và tác giả đang theo dõi. Tác giả không được tự theo dõi chính mình.
+    \item \textbf{Tủ truyện:} tạo, sửa, xoá tủ (tối đa 50 tủ, tên không trùng trong các tủ của cùng một người); thêm truyện kèm ghi chú, bỏ truyện, sắp xếp lại thứ tự (tối đa 500 truyện mỗi tủ); tủ công khai được người khác xem, tủ riêng tư chỉ chủ sở hữu xem được.
+    \item \textbf{Đánh giá:} chấm điểm 1--5 kèm nhận xét, sửa hoặc xoá đánh giá của mình; mỗi người có tối đa một đánh giá cho mỗi truyện. Quản trị viên và tác giả của chính truyện đó không được đánh giá. Trang truyện hiển thị danh sách nhận xét, điểm trung bình và số lượt đánh giá ở từng mức điểm.
+\end{itemize}
+Các thao tác theo dõi và đánh giá đều có thể bị gọi lặp lại hoặc gửi đồng thời (bấm nhiều lần, mở nhiều tab), nên các câu lệnh ghi được thiết kế để chạy lặp lại vẫn cho cùng kết quả. Các giá trị tổng hợp \texttt{Story.FollowCount}, \texttt{Story.RatingAvg}, \texttt{Story.RatingCount} và \texttt{Author.FollowerCount} do trigger trên SQL Server cập nhật trong cùng giao dịch; sau khi ghi thành công, service xoá khoá đệm \texttt{cache:story:\{id\}} để trang truyện hiển thị số liệu mới. Đánh giá bị giới hạn 10 lần mỗi phút, theo dõi 60 lần mỗi phút trên một tài khoản.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-library-rating} mô tả luồng đánh giá truyện. Câu \texttt{MERGE} vừa thêm mới vừa cập nhật đánh giá; trigger \texttt{trg\_Rating} tính lại điểm trung bình của truyện ngay trong giao dịch đó.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_library_rating.png}
+    \caption{Sơ đồ tuần tự đánh giá truyện}
+    \label{fig:seq-library-rating}
+\end{figure}
+
+Hình~\ref{fig:seq-library-follow} mô tả luồng theo dõi truyện. Câu lệnh chỉ chèn khi chưa có dòng tương ứng, nên theo dõi lại một truyện đã theo dõi không gây lỗi.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_library_follow.png}
+    \caption{Sơ đồ tuần tự theo dõi truyện}
+    \label{fig:seq-library-follow}
+\end{figure}
+
+Hình~\ref{fig:seq-library-list} mô tả luồng thêm truyện vào tủ. Dòng tủ truyện được khoá (\texttt{UPDLOCK}) ngay khi kiểm tra quyền sở hữu, nên hai yêu cầu thêm truyện đồng thời vào cùng một tủ sẽ được xử lý lần lượt và không tạo ra số thứ tự trùng nhau.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_library_list.png}
+    \caption{Sơ đồ tuần tự thêm truyện vào tủ truyện}
+    \label{fig:seq-library-list}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Theo dõi truyện, chỉ chèn khi chưa theo dõi} (thêm dữ liệu với truy vấn con \texttt{NOT EXISTS}; \texttt{UPDLOCK, HOLDLOCK} giữ khoá từ lúc kiểm tra tới lúc chèn):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.Follow (UserId, StoryId)
+SELECT @userId, @storyId
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Follow WITH (UPDLOCK, HOLDLOCK)
+                  WHERE UserId = @userId AND StoryId = @storyId);
+\end{minted}
+
+\textit{Bỏ theo dõi truyện} (xoá dữ liệu):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+DELETE dbo.Follow WHERE UserId = @userId AND StoryId = @storyId;
+\end{minted}
+
+\textit{Tác giả đang theo dõi} (truy vấn kết nối ba bảng, phân trang):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT a.UserId AS AuthorId, a.PenName, u.AvatarUrl, a.IsVerified, a.FollowerCount,
+       af.CreatedAt AS FollowedAt
+FROM dbo.AuthorFollow af
+JOIN dbo.Author a ON a.UserId = af.AuthorId
+JOIN dbo.[User] u ON u.UserId = a.UserId
+WHERE af.FollowerId = @userId
+ORDER BY af.CreatedAt DESC, a.UserId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Lịch sử đọc} (truy vấn kết nối, kết nối ngoài để vẫn hiện truyện khi chương đã lưu không còn công khai):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Slug, s.Title, s.CoverUrl, s.ChapterCount, s.AuthorName,
+       h.ScrollPercent, h.UpdatedAt AS ReadAt,
+       ch.ChapterId AS LastChapterId, ch.ChapterNo AS LastChapterNo, ch.Title AS LastChapterTitle
+FROM dbo.vw_PublicStory s
+JOIN dbo.ReadingHistory h ON h.StoryId = s.StoryId AND h.UserId = @userId
+LEFT JOIN dbo.Chapter ch  ON ch.ChapterId = h.LastChapterId
+                         AND ch.Status = 'PUBLISHED' AND ch.IsDeleted = 0
+ORDER BY h.UpdatedAt DESC, s.StoryId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Thêm truyện vào cuối tủ} (thêm dữ liệu từ truy vấn con có hàm tổng hợp; với tủ rỗng, \texttt{MAX} trả về \texttt{NULL} nên số thứ tự bắt đầu từ 1):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.ReadingListItem (ListId, StoryId, OrderNo, Note)
+SELECT @listId, @storyId, ISNULL(MAX(i.OrderNo), 0) + 1, @note
+FROM dbo.ReadingListItem i
+WHERE i.ListId = @listId;
+
+UPDATE dbo.ReadingList
+SET ItemCount = ItemCount + 1, UpdatedAt = SYSUTCDATETIME()
+WHERE ListId = @listId;
+\end{minted}
+
+\textit{Sắp xếp lại tủ} (cập nhật toàn bộ thứ tự mới trong một câu lệnh, dùng bảng giá trị \texttt{VALUES}). Ví dụ với ba truyện theo thứ tự mới 7, 3, 12:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE i
+SET OrderNo = v.OrderNo
+FROM dbo.ReadingListItem i
+JOIN (VALUES (7, 1), (3, 2), (12, 3)) AS v (StoryId, OrderNo)
+  ON v.StoryId = i.StoryId
+WHERE i.ListId = @listId;
+\end{minted}
+
+\textit{Lưu đánh giá} (thêm mới hoặc cập nhật trong một câu lệnh):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+MERGE dbo.Rating WITH (HOLDLOCK) AS t
+USING (SELECT @userId AS UserId, @storyId AS StoryId,
+              CAST(@score AS TINYINT) AS Score, @review AS Review) AS src
+   ON t.UserId = src.UserId AND t.StoryId = src.StoryId
+WHEN MATCHED THEN
+    UPDATE SET Score = src.Score, Review = src.Review, UpdatedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (UserId, StoryId, Score, Review)
+    VALUES (src.UserId, src.StoryId, src.Score, src.Review);
+\end{minted}
+
+\textit{Trigger \texttt{trg\_Rating} tính lại điểm trung bình} sau mỗi lần thêm, sửa, xoá đánh giá (cập nhật có kết nối, truy vấn con và hàm tổng hợp; xử lý được nhiều dòng thay đổi cùng lúc):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE s
+SET RatingAvg   = COALESCE(x.AvgScore, 0),
+    RatingCount = COALESCE(x.RatingCount, 0)
+FROM dbo.Story s
+JOIN (SELECT StoryId FROM inserted UNION SELECT StoryId FROM deleted) t
+  ON t.StoryId = s.StoryId
+OUTER APPLY (SELECT CAST(AVG(CAST(r.Score AS DECIMAL(5,2))) AS DECIMAL(3,2)) AS AvgScore,
+                    COUNT(*) AS RatingCount
+             FROM dbo.Rating r
+             WHERE r.StoryId = s.StoryId) x;
+\end{minted}
+
+\textit{Phân bố điểm đánh giá của một truyện} (hàm tổng hợp với \texttt{GROUP BY}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT r.Score, COUNT(*) AS Total
+FROM dbo.Rating r
+WHERE r.StoryId = @storyId
+GROUP BY r.Score;
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{library-history.png}{Giao diện lịch sử đọc trong thư viện}{fig:ui-library-history}
+\screenshot{library-follows.png}{Giao diện truyện và tác giả đang theo dõi}{fig:ui-library-follows}
+\screenshot{library-reading-list.png}{Giao diện tủ truyện và sắp xếp truyện trong tủ}{fig:ui-library-list}
+\screenshot{library-rating.png}{Giao diện đánh giá và danh sách nhận xét của truyện}{fig:ui-library-rating}
+
+\subsubsection{Module Yêu cầu tác giả}
+\label{subsubsec:feature-author-request}
+
+\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-7 và phần duyệt tác giả của FR-11.3:
+\begin{itemize}
+    \item \textbf{Gửi yêu cầu:} người đọc đang hoạt động gửi bút danh đề xuất và lời giới thiệu; yêu cầu mới có trạng thái \texttt{PENDING}. Mỗi người chỉ có tối đa một yêu cầu đang chờ, và bút danh không được trùng với tác giả đã có. Tác giả và quản trị viên không được gửi yêu cầu.
+    \item \textbf{Theo dõi và huỷ yêu cầu:} người gửi xem lại toàn bộ yêu cầu của mình kèm trạng thái, ghi chú phản hồi và thời điểm xét duyệt; yêu cầu đang chờ có thể được huỷ (trạng thái \texttt{CANCELLED}).
+    \item \textbf{Hàng đợi duyệt:} quản trị viên xem danh sách yêu cầu theo trạng thái (mặc định là đang chờ, cũ nhất trước), nhận biết người từng bị từ chối, và xem chi tiết từng yêu cầu kèm thông tin người gửi.
+    \item \textbf{Duyệt và từ chối:} khi duyệt, trạng thái yêu cầu, vai trò tài khoản và hồ sơ tác giả được thay đổi trong cùng một giao dịch; khi từ chối, quản trị viên có thể kèm ghi chú phản hồi. Vai trò mới có hiệu lực ngay ở yêu cầu tiếp theo của người dùng, không cần đăng nhập lại.
+\end{itemize}
+Điểm quan trọng nhất của module là bảo đảm \textbf{mỗi yêu cầu chỉ được xử lý một lần}, kể cả khi hai quản trị viên bấm duyệt cùng lúc. Ràng buộc này được hiện thực bằng khoá dòng trong thủ tục lưu trữ trên SQL Server; ngoài ra, hệ thống có thể bật thêm khoá phân tán trên Redis để so sánh hai cơ chế kiểm soát đồng thời. Việc gửi yêu cầu bị giới hạn 3 lần mỗi ngày trên một tài khoản.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-author-submit} mô tả luồng gửi yêu cầu. Ngoài các kiểm tra ở service, unique index có lọc \texttt{UX\_AuthorRequest\_Pending} trên SQL Server là lớp bảo vệ cuối cùng khi hai yêu cầu được gửi đồng thời.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_author_submit.png}
+    \caption{Sơ đồ tuần tự gửi yêu cầu trở thành tác giả}
+    \label{fig:seq-author-submit}
+\end{figure}
+
+Hình~\ref{fig:seq-author-approve} mô tả luồng duyệt yêu cầu. Toàn bộ thay đổi dữ liệu nằm trong thủ tục \texttt{sp\_ApproveAuthorRequest}; thủ tục tự kiểm tra lại trạng thái sau khi đã khoá dòng và trả mã lỗi riêng cho từng trường hợp không hợp lệ.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_author_approve.png}
+    \caption{Sơ đồ tuần tự duyệt yêu cầu trở thành tác giả}
+    \label{fig:seq-author-approve}
+\end{figure}
+
+Hình~\ref{fig:seq-author-race} mô tả tình huống hai quản trị viên cùng duyệt một yêu cầu. Phiên B phải chờ khoá do phiên A giữ; khi A hoàn tất, B đọc được trạng thái đã duyệt và nhận lỗi \texttt{50001}, nên hồ sơ tác giả không bị tạo hai lần.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_author_race.png}
+    \caption{Sơ đồ tuần tự hai quản trị viên duyệt cùng một yêu cầu}
+    \label{fig:seq-author-race}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Gửi yêu cầu} (thêm dữ liệu; trạng thái và thời điểm tạo lấy từ giá trị mặc định của cột):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.AuthorRequest (UserId, ProposedPenName, Introduction)
+VALUES (@userId, @proposedPenName, @introduction);
+\end{minted}
+
+\textit{Kiểm tra yêu cầu đang chờ và bút danh} (truy vấn con \texttt{EXISTS}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.AuthorRequest
+                         WHERE UserId = @userId AND Status = 'PENDING')
+            THEN 1 ELSE 0 END AS HasPending;
+
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Author WHERE PenName = @penName)
+            THEN 1 ELSE 0 END AS PenNameTaken;
+\end{minted}
+
+\textit{Yêu cầu của tôi} (truy vấn một điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT RequestId, ProposedPenName, Introduction, Status, ReviewNote, CreatedAt, ReviewedAt
+FROM dbo.AuthorRequest
+WHERE UserId = @userId
+ORDER BY CreatedAt DESC, RequestId DESC;
+\end{minted}
+
+\textit{Huỷ yêu cầu} (cập nhật nhiều điều kiện; điều kiện \texttt{Status = 'PENDING'} trong \texttt{WHERE} bảo đảm chỉ huỷ được yêu cầu còn đang chờ):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.AuthorRequest
+SET Status = 'CANCELLED'
+WHERE RequestId = @requestId AND UserId = @userId AND Status = 'PENDING';
+\end{minted}
+
+\textit{Hàng đợi duyệt} (truy vấn kết nối và truy vấn con tương quan, đánh dấu người từng bị từ chối ở yêu cầu khác):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT r.RequestId, r.ProposedPenName, r.Status, r.CreatedAt, r.ReviewedAt,
+       u.UserId, u.Username, u.AvatarUrl,
+       CASE WHEN EXISTS (
+           SELECT 1 FROM dbo.AuthorRequest r2
+           WHERE r2.UserId = r.UserId AND r2.Status = 'REJECTED'
+             AND r2.RequestId <> r.RequestId)
+       THEN 1 ELSE 0 END AS PreviouslyRejected
+FROM dbo.AuthorRequest r
+JOIN dbo.[User] u ON u.UserId = r.UserId
+WHERE r.Status = 'PENDING'
+ORDER BY r.CreatedAt ASC, r.RequestId ASC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Số yêu cầu khác của cùng người gửi theo trạng thái} (hàm tổng hợp với \texttt{GROUP BY} và truy vấn con):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT o.Status, COUNT(*) AS Total
+FROM dbo.AuthorRequest o
+WHERE o.UserId = (SELECT r.UserId FROM dbo.AuthorRequest r WHERE r.RequestId = @requestId)
+  AND o.RequestId <> @requestId
+GROUP BY o.Status;
+\end{minted}
+
+\textit{Thủ tục duyệt yêu cầu \texttt{sp\_ApproveAuthorRequest}} (giao dịch gồm khoá dòng, các kiểm tra và ba thao tác ghi). Gợi ý \texttt{UPDLOCK, HOLDLOCK} khiến phiên duyệt thứ hai phải chờ phiên thứ nhất kết thúc rồi mới đọc được trạng thái:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+BEGIN TRANSACTION;
+
+SELECT @UserId = UserId, @PenName = ProposedPenName, @Status = Status
+FROM dbo.AuthorRequest WITH (UPDLOCK, HOLDLOCK)
+WHERE RequestId = @RequestId;
+
+IF @@ROWCOUNT = 0
+    THROW 50004, N'Author request not found.', 1;
+IF NOT EXISTS (SELECT 1 FROM dbo.[User]
+               WHERE UserId = @AdminId AND Role = 'ADMIN' AND Status = 'ACTIVE')
+    THROW 50002, N'Only an active ADMIN can review author requests.', 1;
+IF @Status <> 'PENDING'
+    THROW 50001, N'Author request was already processed.', 1;
+IF NOT EXISTS (SELECT 1 FROM dbo.[User] WITH (UPDLOCK)
+               WHERE UserId = @UserId AND Role = 'READER' AND Status = 'ACTIVE')
+    THROW 50002, N'The applicant is not an active READER.', 1;
+IF EXISTS (SELECT 1 FROM dbo.Author WITH (UPDLOCK, HOLDLOCK) WHERE PenName = @PenName)
+    THROW 50003, N'Pen name is already in use.', 1;
+
+UPDATE dbo.AuthorRequest
+SET Status = 'APPROVED', ReviewedBy = @AdminId, ReviewedAt = SYSUTCDATETIME()
+WHERE RequestId = @RequestId;
+
+UPDATE dbo.[User]
+SET Role = 'AUTHOR', UpdatedAt = SYSUTCDATETIME()
+WHERE UserId = @UserId;
+
+INSERT dbo.Author (UserId, PenName, ApprovedRequestId)
+VALUES (@UserId, @PenName, @RequestId);
+
+COMMIT TRANSACTION;
+\end{minted}
+Thủ tục được bọc trong \texttt{BEGIN TRY \ldots{} END TRY} với \texttt{SET XACT\_ABORT ON}; khi có lỗi, khối \texttt{CATCH} huỷ giao dịch và ném lại lỗi để backend chuyển thành mã HTTP tương ứng. Thủ tục từ chối \texttt{sp\_RejectAuthorRequest} có cấu trúc tương tự, chỉ cập nhật trạng thái \texttt{REJECTED} và ghi chú phản hồi.
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{author-request-form.png}{Giao diện gửi yêu cầu trở thành tác giả}{fig:ui-author-request-form}
+\screenshot{author-request-status.png}{Giao diện theo dõi trạng thái các yêu cầu đã gửi}{fig:ui-author-request-status}
+\screenshot{author-request-queue.png}{Giao diện hàng đợi yêu cầu của quản trị viên}{fig:ui-author-request-queue}
+\screenshot{author-request-review.png}{Giao diện chi tiết và duyệt yêu cầu}{fig:ui-author-request-review}
+
+\subsubsection{Module Studio sáng tác}
+\label{subsubsec:feature-studio}
+
+\paragraph{Mô tả chức năng.} Module là khu vực làm việc của tác giả, hiện thực các nhóm yêu cầu FR-8, FR-9 và FR-10. Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập; truyện hoặc chương của người khác đều được trả về như không tồn tại.
+\begin{itemize}
+    \item \textbf{Quản lý truyện:} danh sách truyện của tôi lọc theo trạng thái; tạo truyện mới ở trạng thái bản nháp với slug sinh tự động từ tên truyện; sửa thông tin, thay thể loại (1--3, đúng một thể loại chính) và thẻ (tối đa 10); công khai truyện khi đã có ít nhất một chương đăng, chuyển về bản nháp hoặc xoá mềm truyện; cập nhật hồ sơ tác giả.
+    \item \textbf{Viết chương:} tạo, đổi tên, xoá tập (chỉ khi tập không còn chương); tạo chương với số thứ tự tự tăng; tự động lưu bản nháp lên Redis trong lúc soạn; lưu chương; đăng ngay hoặc hẹn giờ đăng; xoá chương.
+    \item \textbf{Phiên bản chương:} mỗi lần nội dung chương thay đổi, bản cũ được lưu thành một phiên bản; tác giả xem tối đa 10 phiên bản gần nhất và khôi phục chương về một phiên bản đã chọn.
+    \item \textbf{Thống kê tác giả:} số liệu tổng quan, biểu đồ lượt xem theo ngày hoặc tháng (toàn bộ hoặc từng truyện), thống kê từng truyện kèm lượt xem 30 ngày và đánh dấu truyện có điểm cao hơn mức trung bình của chính tác giả, thông tin người theo dõi.
+\end{itemize}
+Việc sửa truyện và sửa chương dùng \textbf{khoá lạc quan} theo cột \texttt{UpdatedAt}: lệnh \texttt{UPDATE} chỉ áp dụng khi \texttt{UpdatedAt} còn bằng giá trị mà giao diện đã đọc, nếu không thì báo lỗi \texttt{409} để tránh ghi đè chỉnh sửa ở một tab khác. Đăng chương được giới hạn 10 lần mỗi phút, tạo truyện 10 lần mỗi giờ và lưu bản nháp 30 lần mỗi phút trên một tài khoản.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-studio-save} mô tả luồng tự lưu bản nháp và lưu chương. Bản nháp chỉ được ghi vào Redis; khi tác giả lưu chính thức, service đặt mã tác giả vào \texttt{SESSION\_CONTEXT} để trigger \texttt{trg\_Chapter\_Revision} biết ai là người sửa, rồi cập nhật chương với điều kiện khoá lạc quan. Trigger tự lưu bản cũ thành một phiên bản trong cùng giao dịch.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_studio_save.png}
+    \caption{Sơ đồ tuần tự tự lưu bản nháp và lưu chương}
+    \label{fig:seq-studio-save}
+\end{figure}
+
+Hình~\ref{fig:seq-studio-publish} mô tả luồng đăng chương. Thủ tục \texttt{sp\_PublishChapter} khoá dòng chương, đổi trạng thái, tính lại thống kê của truyện và ghi thời điểm công khai lần đầu trong một giao dịch; khi hai tab cùng bấm đăng, phiên thứ hai nhận lỗi \texttt{50001}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_studio_publish.png}
+    \caption{Sơ đồ tuần tự đăng chương}
+    \label{fig:seq-studio-publish}
+\end{figure}
+
+Hình~\ref{fig:seq-studio-schedule} mô tả tác vụ đăng chương hẹn giờ chạy mỗi 60 giây. Gợi ý \texttt{READPAST} giúp tác vụ bỏ qua các chương đang bị tác giả khoá để sửa thay vì phải chờ; các chương đó sẽ được đăng ở lần chạy sau.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_studio_schedule.png}
+    \caption{Sơ đồ tuần tự tác vụ đăng chương hẹn giờ}
+    \label{fig:seq-studio-schedule}
+\end{figure}
+
+Hình~\ref{fig:seq-studio-dashboard} mô tả luồng lấy biểu đồ lượt xem cho bảng thống kê của tác giả.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_studio_dashboard.png}
+    \caption{Sơ đồ tuần tự lấy thống kê lượt xem của tác giả}
+    \label{fig:seq-studio-dashboard}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Truyện của tôi theo trạng thái} (truy vấn nhiều điều kiện, phân trang):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Slug, s.Title, s.CoverUrl, s.PublishStatus, s.ChapterCount,
+       s.ViewCount, s.FollowCount, s.RatingAvg, s.UpdatedAt
+FROM dbo.Story s
+WHERE s.AuthorId = @authorId AND s.IsDeleted = 0 AND s.PublishStatus = @status
+ORDER BY s.UpdatedAt DESC, s.StoryId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Tạo truyện và gán thể loại} (thêm dữ liệu; các cột trạng thái, bộ đếm và thời gian lấy giá trị mặc định). Ví dụ với hai thể loại, thể loại 3 là thể loại chính:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.Story (AuthorId, Title, Slug, Description, CoverUrl, AgeRating, CompletionStatus)
+VALUES (@authorId, @title, @slug, @description, @coverUrl, @ageRating, @completionStatus);
+
+INSERT dbo.StoryGenre (StoryId, GenreId, IsPrimary)
+VALUES (@storyId, 3, 1), (@storyId, 7, 0);
+\end{minted}
+
+\textit{Sửa thông tin truyện với khoá lạc quan} (cập nhật nhiều điều kiện; 0 dòng bị ảnh hưởng nghĩa là dữ liệu đã bị sửa ở nơi khác):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.Story
+SET Title = @title, Description = @description, CompletionStatus = @completionStatus,
+    UpdatedAt = SYSUTCDATETIME()
+WHERE StoryId = @storyId AND AuthorId = @authorId AND IsDeleted = 0
+  AND UpdatedAt = @version;
+\end{minted}
+
+\textit{Công khai truyện} (cập nhật có điều kiện tiên quyết nằm trong \texttt{WHERE}, nên kiểm tra và đổi trạng thái diễn ra trong một câu lệnh):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.Story
+SET PublishStatus = 'PUBLISHED',
+    PublishedAt   = COALESCE(PublishedAt, SYSUTCDATETIME()),
+    UpdatedAt     = SYSUTCDATETIME()
+WHERE StoryId = @storyId AND AuthorId = @authorId AND IsDeleted = 0
+  AND PublishStatus = 'DRAFT' AND ChapterCount > 0;
+\end{minted}
+
+\textit{Tạo chương với số thứ tự kế tiếp} (thêm dữ liệu từ truy vấn con có hàm tổng hợp; \texttt{UPDLOCK, HOLDLOCK} khoá khoảng khoá của truyện, nên hai lệnh tạo đồng thời nhận hai số khác nhau):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.Chapter (StoryId, VolumeId, ChapterNo, Title, Content, WordCount)
+SELECT @storyId, @volumeId, ISNULL(MAX(x.ChapterNo), 0) + 1, @title, @content, @wordCount
+FROM dbo.Chapter x WITH (UPDLOCK, HOLDLOCK)
+WHERE x.StoryId = @storyId;
+\end{minted}
+
+\textit{Lưu chương} (cập nhật với khoá lạc quan; mã tác giả được đặt vào \texttt{SESSION\_CONTEXT} trước, trên cùng kết nối):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+EXEC sys.sp_set_session_context @key = N'user_id', @value = @authorId;
+
+UPDATE dbo.Chapter
+SET Title = @title, Content = @content, WordCount = @wordCount,
+    VolumeId = @volumeId, UpdatedAt = SYSUTCDATETIME()
+WHERE ChapterId = @chapterId AND IsDeleted = 0 AND UpdatedAt = @version;
+\end{minted}
+
+\textit{Trigger \texttt{trg\_Chapter\_Revision} lưu phiên bản cũ} (thêm dữ liệu từ bảng \texttt{deleted} với truy vấn con, sau đó xoá các phiên bản cũ hơn 10 bản gần nhất bằng hàm cửa sổ \texttt{ROW\_NUMBER}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT dbo.ChapterRevision (ChapterId, RevisionNo, Title, Content, WordCount, EditedBy)
+SELECT d.ChapterId, COALESCE(m.MaxNo, 0) + 1, d.Title, d.Content, d.WordCount,
+       CAST(SESSION_CONTEXT(N'user_id') AS INT)
+FROM deleted d
+JOIN inserted i ON i.ChapterId = d.ChapterId
+OUTER APPLY (SELECT MAX(r.RevisionNo) AS MaxNo
+             FROM dbo.ChapterRevision r WITH (UPDLOCK, HOLDLOCK)
+             WHERE r.ChapterId = d.ChapterId) m
+WHERE i.Title   COLLATE Latin1_General_100_BIN2 <> d.Title   COLLATE Latin1_General_100_BIN2
+   OR i.Content COLLATE Latin1_General_100_BIN2 <> d.Content COLLATE Latin1_General_100_BIN2;
+
+WITH ranked AS (
+    SELECT RevisionId,
+           ROW_NUMBER() OVER (PARTITION BY ChapterId ORDER BY RevisionNo DESC) AS rn
+    FROM dbo.ChapterRevision
+    WHERE ChapterId IN (SELECT ChapterId FROM inserted)
+)
+DELETE FROM ranked WHERE rn > 10;
+\end{minted}
+
+\textit{Tính lại thống kê truyện} trong thủ tục \texttt{sp\_RecalcStoryStats}, được gọi khi đăng, sửa hoặc xoá chương đã đăng (cập nhật với \texttt{CROSS APPLY} và hàm tổng hợp):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE s
+SET ChapterCount  = x.ChapterCount,
+    WordCount     = x.WordCount,
+    LastChapterAt = x.LastChapterAt,
+    UpdatedAt     = SYSUTCDATETIME()
+FROM dbo.Story s
+CROSS APPLY (SELECT COUNT(*)                                     AS ChapterCount,
+                    COALESCE(SUM(CAST(c.WordCount AS BIGINT)), 0) AS WordCount,
+                    MAX(c.PublishedAt)                            AS LastChapterAt
+             FROM dbo.Chapter c
+             WHERE c.StoryId = s.StoryId AND c.Status = 'PUBLISHED' AND c.IsDeleted = 0) x
+WHERE s.StoryId = @storyId;
+\end{minted}
+
+\textit{Chọn các chương hẹn giờ đã đến hạn} trong thủ tục \texttt{sp\_PublishScheduled}; \texttt{READPAST} bỏ qua các dòng đang bị khoá:
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT @Due (ChapterId, StoryId)
+SELECT c.ChapterId, c.StoryId
+FROM dbo.Chapter c WITH (UPDLOCK, READPAST, ROWLOCK)
+WHERE c.Status = 'SCHEDULED' AND c.IsDeleted = 0 AND c.ScheduledAt <= @Now;
+
+UPDATE c
+SET Status = 'PUBLISHED', PublishedAt = @Now, ScheduledAt = NULL, UpdatedAt = @Now
+FROM dbo.Chapter c
+JOIN @Due d ON d.ChapterId = c.ChapterId;
+\end{minted}
+
+\textit{Danh sách phiên bản của chương} (truy vấn kết nối):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT r.RevisionNo, r.Title, r.WordCount, a.PenName AS EditedBy, r.CreatedAt
+FROM dbo.ChapterRevision r
+JOIN dbo.Author a ON a.UserId = r.EditedBy
+WHERE r.ChapterId = @chapterId
+ORDER BY r.RevisionNo DESC;
+\end{minted}
+
+\textit{Lượt xem theo tháng} (truy vấn kết nối, hàm tổng hợp và \texttt{GROUP BY}; khi xem theo ngày, biểu thức nhóm là \texttt{d.ViewDate}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT DATEFROMPARTS(YEAR(d.ViewDate), MONTH(d.ViewDate), 1) AS Period,
+       SUM(CAST(d.Views AS BIGINT)) AS Views
+FROM dbo.StoryViewDaily d
+JOIN dbo.Story s ON s.StoryId = d.StoryId
+WHERE s.AuthorId = @authorId AND s.IsDeleted = 0
+  AND d.ViewDate BETWEEN @from AND @to
+GROUP BY DATEFROMPARTS(YEAR(d.ViewDate), MONTH(d.ViewDate), 1)
+ORDER BY Period;
+\end{minted}
+
+\textit{Thống kê từng truyện} (truy vấn con tương quan so sánh với điểm trung bình các truyện của chính tác giả, và \texttt{OUTER APPLY} tính lượt xem 30 ngày):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Title, s.ViewCount, s.RatingAvg, s.RatingCount,
+       COALESCE(v.Views, 0) AS Views30d,
+       CASE WHEN s.RatingCount > 0
+                 AND s.RatingAvg > (SELECT AVG(s2.RatingAvg)
+                                    FROM dbo.Story s2
+                                    WHERE s2.AuthorId = s.AuthorId AND s2.IsDeleted = 0
+                                      AND s2.RatingCount > 0)
+            THEN 1 ELSE 0 END AS AboveMyAverage
+FROM dbo.Story s
+OUTER APPLY (SELECT SUM(CAST(d.Views AS BIGINT)) AS Views
+             FROM dbo.StoryViewDaily d
+             WHERE d.StoryId = s.StoryId AND d.ViewDate >= @since) v
+WHERE s.AuthorId = @authorId AND s.IsDeleted = 0
+ORDER BY s.ViewCount DESC, s.StoryId;
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{studio-stories.png}{Giao diện danh sách truyện của tác giả}{fig:ui-studio-stories}
+\screenshot{studio-story-editor.png}{Giao diện tạo và chỉnh sửa thông tin truyện}{fig:ui-studio-story-editor}
+\screenshot{studio-chapter-editor.png}{Giao diện soạn thảo chương với tự lưu bản nháp}{fig:ui-studio-chapter-editor}
+\screenshot{studio-schedule.png}{Giao diện đăng ngay và hẹn giờ đăng chương}{fig:ui-studio-schedule}
+\screenshot{studio-revisions.png}{Giao diện xem và khôi phục phiên bản chương}{fig:ui-studio-revisions}
+\screenshot{studio-dashboard.png}{Giao diện bảng thống kê của tác giả}{fig:ui-studio-dashboard}
+
+\subsubsection{Module Quản trị}
+\label{subsubsec:feature-admin}
+
+\paragraph{Mô tả chức năng.} Module dành riêng cho quản trị viên, hiện thực các nhóm yêu cầu FR-11, FR-12 và FR-13 (phần duyệt yêu cầu tác giả đã trình bày ở mục~\ref{subsubsec:feature-author-request}):
+\begin{itemize}
+    \item \textbf{Quản lý người dùng:} tìm kiếm và lọc người dùng theo vai trò, trạng thái, từ khoá (tên đăng nhập, email, tên hiển thị) và khoảng ngày đăng ký; xem chi tiết tài khoản kèm hồ sơ tác giả và số yêu cầu tác giả theo trạng thái; khoá tài khoản kèm lý do bắt buộc và mở khoá; tạo tài khoản quản trị viên mới; cấp hoặc thu hồi dấu xác minh tác giả. Tài khoản quản trị viên không thể bị khoá, và người bị khoá bị đăng xuất ngay ở yêu cầu kế tiếp.
+    \item \textbf{Kiểm duyệt nội dung:} xem mọi truyện chưa xoá (kể cả bản nháp và truyện bị ẩn), lọc theo trạng thái, tác giả, tên truyện; ẩn truyện đang công khai kèm lý do, hiện lại truyện đã ẩn; xoá mềm truyện của bất kỳ tác giả nào; xoá nhận xét vi phạm.
+    \item \textbf{Quản lý danh mục:} thêm, sửa, xoá thể loại (chỉ xoá khi chưa có truyện nào dùng); tìm kiếm, đổi tên và xoá thẻ.
+    \item \textbf{Thống kê hệ thống:} số người dùng theo vai trò và trạng thái, số truyện theo trạng thái, tổng số chương, chữ, lượt xem và đánh giá; lượt xem toàn hệ thống theo ngày hoặc tháng; số truyện và lượt xem theo thể loại; người dùng mới theo tháng và vai trò; danh sách tác giả có tổng lượt xem cao hơn mức trung bình.
+\end{itemize}
+Các thao tác thay đổi trạng thái (khoá, mở khoá, ẩn, hiện truyện) đặt điều kiện tiên quyết ngay trong mệnh đề \texttt{WHERE} của câu \texttt{UPDATE}, nên khi hai quản trị viên thao tác cùng lúc chỉ một người thành công; nếu câu lệnh không ảnh hưởng dòng nào, service đọc lại trạng thái để trả về mã lỗi phù hợp. Sau mỗi thay đổi nội dung, các khoá đệm liên quan trên Redis bị xoá. Kết quả thống kê được lưu đệm 5 phút vì đây là các truy vấn tổng hợp trên toàn bộ dữ liệu.
+
+\paragraph{Luồng xử lý.} Hình~\ref{fig:seq-admin-ban} mô tả luồng khoá tài khoản. Sau khi tài khoản bị khoá, bộ lọc \texttt{UserStatusFilter} kiểm tra lại trạng thái ở mỗi yêu cầu của người dùng đó và huỷ phiên đăng nhập ngay lập tức.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_admin_ban.png}
+    \caption{Sơ đồ tuần tự khoá tài khoản người dùng}
+    \label{fig:seq-admin-ban}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-hide} mô tả luồng ẩn truyện vi phạm. Vì truyện bị ẩn không còn nằm trong view \texttt{vw\_PublicStory} và bộ nhớ đệm của truyện bị xoá, truyện biến mất khỏi các trang công khai ngay sau khi ẩn.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_admin_hide.png}
+    \caption{Sơ đồ tuần tự ẩn truyện vi phạm}
+    \label{fig:seq-admin-hide}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-review} mô tả luồng xoá nhận xét vi phạm. Trigger \texttt{trg\_Rating} tự tính lại điểm trung bình của truyện sau khi đánh giá bị xoá.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{image/chapter5/seq_admin_review.png}
+    \caption{Sơ đồ tuần tự xoá nhận xét vi phạm}
+    \label{fig:seq-admin-review}
+\end{figure}
+
+Hình~\ref{fig:seq-admin-stats} mô tả luồng lấy số liệu tổng quan theo cơ chế cache-aside.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{image/chapter5/seq_admin_stats.png}
+    \caption{Sơ đồ tuần tự lấy số liệu thống kê tổng quan}
+    \label{fig:seq-admin-stats}
+\end{figure}
+
+\paragraph{Các câu truy vấn SQL.}
+
+\textit{Tìm kiếm người dùng với nhiều bộ lọc} (truy vấn nhiều điều kiện, phân trang; mẫu \texttt{@keyword} có dạng \texttt{N'\%từ khoá\%'}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT u.UserId, u.Username, u.Email, u.DisplayName, u.Role, u.Status,
+       u.CreatedAt, u.LastLoginAt, u.BannedAt
+FROM dbo.[User] u
+WHERE u.Role = @role
+  AND u.Status = @status
+  AND (u.Username LIKE @keyword OR u.Email LIKE @keyword OR u.DisplayName LIKE @keyword)
+  AND u.CreatedAt >= @createdFrom AND u.CreatedAt < @createdTo
+ORDER BY u.CreatedAt DESC, u.UserId DESC
+OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;
+\end{minted}
+
+\textit{Chi tiết người dùng} (kết nối ngoài với hồ sơ tác giả và với quản trị viên đã khoá tài khoản, kèm truy vấn con đếm số truyện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT u.UserId, u.Username, u.Email, u.Role, u.Status, u.BanReason,
+       b.Username AS BannedByUsername,
+       a.PenName, a.IsVerified, a.FollowerCount,
+       (SELECT COUNT(*) FROM dbo.Story s
+        WHERE s.AuthorId = a.UserId AND s.IsDeleted = 0) AS StoryCount
+FROM dbo.[User] u
+LEFT JOIN dbo.Author a ON a.UserId = u.UserId
+LEFT JOIN dbo.[User] b ON b.UserId = u.BannedBy
+WHERE u.UserId = @userId;
+\end{minted}
+
+\textit{Khoá tài khoản} (cập nhật với điều kiện tiên quyết trong \texttt{WHERE}: chỉ khoá tài khoản đang hoạt động và không phải quản trị viên):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.[User]
+SET Status = 'BANNED', BanReason = @reason, BannedBy = @adminId,
+    BannedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
+WHERE UserId = @userId AND Status = 'ACTIVE' AND Role <> 'ADMIN';
+\end{minted}
+
+\textit{Tạo tài khoản quản trị viên} (thêm dữ liệu):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT INTO dbo.[User] (Username, Email, PasswordHash, DisplayName, Role)
+VALUES (@username, @email, @passwordHash, @displayName, 'ADMIN');
+\end{minted}
+
+\textit{Ẩn truyện vi phạm} (cập nhật có điều kiện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+UPDATE dbo.Story
+SET PublishStatus = 'HIDDEN', HiddenReason = @reason, UpdatedAt = SYSUTCDATETIME()
+WHERE StoryId = @storyId AND IsDeleted = 0 AND PublishStatus = 'PUBLISHED';
+\end{minted}
+
+\textit{Xoá mềm truyện} trong thủ tục \texttt{sp\_DeleteStory}, dùng chung cho tác giả và quản trị viên (giao dịch có khoá dòng và kiểm tra quyền):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT @OwnerId = AuthorId
+FROM dbo.Story WITH (UPDLOCK, HOLDLOCK)
+WHERE StoryId = @StoryId AND IsDeleted = 0;
+
+IF NOT (   (@OwnerId = @UserId AND EXISTS (SELECT 1 FROM dbo.[User]
+                WHERE UserId = @UserId AND Role = 'AUTHOR' AND Status = 'ACTIVE'))
+        OR EXISTS (SELECT 1 FROM dbo.[User]
+                WHERE UserId = @UserId AND Role = 'ADMIN' AND Status = 'ACTIVE'))
+    THROW 50002, N'Only the owner or an ADMIN can delete this story.', 1;
+
+UPDATE dbo.Story
+SET IsDeleted = 1, DeletedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
+WHERE StoryId = @StoryId;
+\end{minted}
+
+\textit{Xoá nhận xét vi phạm} (xoá dữ liệu; trigger \texttt{trg\_Rating} cập nhật lại điểm của truyện):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+DELETE dbo.Rating WHERE UserId = @userId AND StoryId = @storyId;
+\end{minted}
+
+\textit{Xoá thể loại chưa được dùng và xoá thẻ} (truy vấn con \texttt{EXISTS} và xoá dữ liệu; các dòng \texttt{StoryTag} được xoá trước vì ràng buộc khoá ngoại):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.StoryGenre WHERE GenreId = @genreId)
+            THEN 1 ELSE 0 END AS GenreInUse;
+DELETE dbo.Genre WHERE GenreId = @genreId;
+
+DELETE dbo.StoryTag WHERE TagId = @tagId;
+DELETE dbo.Tag      WHERE TagId = @tagId;
+\end{minted}
+
+\textit{Số người dùng theo vai trò và trạng thái, số truyện theo trạng thái} (hàm tổng hợp với \texttt{GROUP BY}):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT Role, Status, COUNT(*) AS Total
+FROM dbo.[User]
+GROUP BY Role, Status;
+
+SELECT PublishStatus, COUNT(*) AS Total
+FROM dbo.Story
+WHERE IsDeleted = 0
+GROUP BY PublishStatus;
+\end{minted}
+
+\textit{Số truyện công khai và lượt xem theo thể loại} (kết nối ngoài lồng kết nối trong và hàm tổng hợp; thể loại chưa có truyện vẫn được liệt kê với giá trị 0):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT g.GenreId, g.Name, g.Slug,
+       COUNT(s.StoryId)              AS StoryCount,
+       COALESCE(SUM(s.ViewCount), 0) AS TotalViews
+FROM dbo.Genre g
+LEFT JOIN (dbo.StoryGenre sg
+           JOIN dbo.vw_PublicStory s ON s.StoryId = sg.StoryId)
+       ON sg.GenreId = g.GenreId
+GROUP BY g.GenreId, g.Name, g.Slug, g.SortOrder
+ORDER BY StoryCount DESC, g.SortOrder, g.GenreId;
+\end{minted}
+
+\textit{Người dùng mới theo tháng và vai trò} (bảng dẫn xuất và hàm tổng hợp; thời điểm tạo được đổi sang giờ Việt Nam trước khi nhóm theo tháng):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT x.Month, x.Role, COUNT(*) AS Total
+FROM (SELECT u.Role,
+             DATEFROMPARTS(YEAR(DATEADD(MINUTE, 420, u.CreatedAt)),
+                           MONTH(DATEADD(MINUTE, 420, u.CreatedAt)), 1) AS Month
+      FROM dbo.[User] u
+      WHERE u.CreatedAt >= @sinceUtc) x
+GROUP BY x.Month, x.Role
+ORDER BY x.Month, x.Role;
+\end{minted}
+
+\textit{Tác giả có tổng lượt xem cao hơn mức trung bình toàn hệ thống} (hàm tổng hợp với \texttt{GROUP BY}, \texttt{HAVING} và truy vấn con):
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT TOP (20) a.UserId AS AuthorId, a.PenName, a.IsVerified, a.FollowerCount,
+       COUNT(*) AS StoryCount, SUM(s.ViewCount) AS TotalViews
+FROM dbo.Story s
+JOIN dbo.Author a ON a.UserId = s.AuthorId
+WHERE s.IsDeleted = 0
+GROUP BY a.UserId, a.PenName, a.IsVerified, a.FollowerCount
+HAVING SUM(s.ViewCount) > (
+    SELECT AVG(CAST(t.Total AS DECIMAL(20,2)))
+    FROM (SELECT SUM(ViewCount) AS Total
+          FROM dbo.Story WHERE IsDeleted = 0
+          GROUP BY AuthorId) t)
+ORDER BY TotalViews DESC, a.UserId;
+\end{minted}
+
+\paragraph{Kết quả hiện thực.} Các hình dưới đây là giao diện của module trên ứng dụng web.
+
+\screenshot{admin-users.png}{Giao diện quản lý người dùng}{fig:ui-admin-users}
+\screenshot{admin-user-detail.png}{Giao diện chi tiết và khoá tài khoản}{fig:ui-admin-user-detail}
+\screenshot{admin-stories.png}{Giao diện kiểm duyệt truyện}{fig:ui-admin-stories}
+\screenshot{admin-catalog.png}{Giao diện quản lý thể loại và thẻ}{fig:ui-admin-catalog}
+\screenshot{admin-dashboard.png}{Giao diện bảng thống kê toàn hệ thống}{fig:ui-admin-dashboard}

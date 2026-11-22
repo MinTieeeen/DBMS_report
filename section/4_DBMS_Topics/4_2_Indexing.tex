@@ -1,0 +1,406 @@
+\subsection{Cấu trúc chỉ mục (Indexing)}
+\label{subsec:indexing}
+
+\subsubsection{Cơ sở lý thuyết}
+\label{subsubsec:indexing-theory}
+
+Chỉ mục (\emph{index}) là cấu trúc dữ liệu phụ xây dựng trên một hoặc nhiều thuộc tính (\emph{khoá tìm kiếm}) để tìm các bản ghi thoả điều kiện mà không phải quét toàn bộ tệp dữ liệu~\cite{elmasri2016fundamentals,silberschatz2019database}. Các khái niệm chính:
+
+\begin{itemize}
+    \item \textbf{Chỉ mục chính / gom cụm / phụ:} chỉ mục chính và gom cụm gắn với thứ tự vật lý của tệp (mỗi tệp tối đa một), chỉ mục phụ xây trên thuộc tính bất kỳ (có thể có nhiều).
+    \item \textbf{Chỉ mục dày / thưa:} có một mục cho mỗi bản ghi, hoặc chỉ một mục cho mỗi khối dữ liệu.
+    \item \textbf{Chỉ mục kết hợp:} khoá gồm nhiều thuộc tính; thứ tự các thuộc tính quyết định điều kiện nào dùng được chỉ mục.
+    \item \textbf{Cây B\textsuperscript{+}:} cây cân bằng nhiều cấp, tìm kiếm $O(\log N)$, các nút lá liên kết theo thứ tự nên hỗ trợ tốt truy vấn theo khoảng và sắp xếp.
+    \item \textbf{Chỉ mục băm:} tìm theo điều kiện bằng với chi phí $O(1)$ nhưng không hỗ trợ truy vấn theo khoảng.
+    \item \textbf{Chỉ mục đảo:} ánh xạ từ $\rightarrow$ danh sách tài liệu chứa từ, dùng cho tìm kiếm toàn văn.
+\end{itemize}
+
+Chỉ mục giúp đọc nhanh hơn nhưng tốn thêm dung lượng và làm chậm thao tác ghi, vì mỗi lệnh \texttt{INSERT}, \texttt{UPDATE}, \texttt{DELETE} phải cập nhật cả chỉ mục.
+
+% -------------------------------------------------------------------
+\subsubsection{Cơ chế chỉ mục trên MS SQL Server}
+\label{subsubsec:indexing-mssql}
+
+\paragraph{Tổ chức lưu trữ nền tảng.} SQL Server lưu dữ liệu trong các trang (\emph{page}) kích thước 8~KB, nhóm thành các extent gồm 8 trang liên tiếp. Chỉ mục \emph{rowstore} của SQL Server được tổ chức dưới dạng cây B\textsuperscript{+}: nút gốc và các nút trung gian chứa khoá dẫn đường, nút lá chứa dữ liệu chỉ mục; các trang ở cùng một cấp được liên kết đôi với nhau để duyệt xuôi hoặc ngược theo thứ tự khoá~\cite{mssqldocs}. Một bảng có thể được lưu ở một trong hai dạng:
+
+\begin{itemize}
+    \item \textbf{Heap:} bảng không có chỉ mục gom cụm; các dòng không theo thứ tự nào và được định vị bằng \emph{RID} (mã tệp, mã trang, số khe trong trang).
+    \item \textbf{Bảng có chỉ mục gom cụm:} bản thân dữ liệu được sắp xếp và lưu trong các nút lá của cây B\textsuperscript{+}.
+\end{itemize}
+
+\paragraph{Clustered index.} Chỉ mục gom cụm (\emph{clustered index}) quyết định thứ tự lưu trữ vật lý của các dòng; nút lá của nó \emph{chính là} các trang dữ liệu, nên mỗi bảng chỉ có tối đa một clustered index. Mặc định, khi khai báo \texttt{PRIMARY KEY}, SQL Server tạo một clustered index trên khoá chính. Khoá gom cụm nên ngắn, duy nhất, ít thay đổi và tăng dần, vì nó được chép vào mọi chỉ mục phụ và vì khoá tăng dần giúp các dòng mới luôn được ghi vào cuối cây, hạn chế tách trang.
+
+\paragraph{Nonclustered index.} Chỉ mục không gom cụm (\emph{nonclustered index}) là một cây B\textsuperscript{+} riêng, tách khỏi dữ liệu, tương ứng với chỉ mục phụ trong lý thuyết. Mỗi dòng ở nút lá gồm giá trị khoá chỉ mục và một \emph{bộ định vị dòng} (\emph{row locator}): là RID nếu bảng là heap, hoặc là giá trị khoá gom cụm nếu bảng có clustered index. Một bảng có thể có tới 999 nonclustered index. Khi truy vấn cần thêm các cột không có trong chỉ mục, SQL Server phải dùng bộ định vị để tra lại dòng đầy đủ, thao tác này gọi là \emph{Key Lookup} (hoặc \emph{RID Lookup} với heap). Vì mỗi lần tra là một lần truy cập ngẫu nhiên, khi số dòng khớp vượt một ngưỡng (\emph{tipping point}), bộ tối ưu truy vấn sẽ bỏ qua chỉ mục và chọn quét toàn bảng.
+
+\paragraph{Các biến thể của nonclustered index.} SQL Server hỗ trợ nhiều tuỳ chọn để làm chỉ mục phù hợp hơn với truy vấn:
+
+\begin{itemize}
+    \item \textbf{Chỉ mục kết hợp} (\emph{composite}): khoá gồm tối đa 32 cột. Chỉ mục được tìm kiếm hiệu quả (\emph{Index Seek}) khi điều kiện truy vấn dùng các cột theo thứ tự từ trái sang; thông thường các cột so sánh bằng nên đứng trước cột so sánh theo khoảng.
+    \item \textbf{Chỉ mục bao phủ} (\emph{covering index}) với mệnh đề \texttt{INCLUDE}: các cột được \texttt{INCLUDE} chỉ nằm ở nút lá, không tham gia sắp xếp, giúp chỉ mục chứa đủ mọi cột truy vấn cần và loại bỏ hoàn toàn bước Key Lookup.
+    \item \textbf{Chỉ mục duy nhất} (\emph{unique index}): bảo đảm không có hai dòng trùng giá trị khoá. Ràng buộc \texttt{UNIQUE} được SQL Server hiện thực bằng chính loại chỉ mục này.
+    \item \textbf{Chỉ mục có lọc} (\emph{filtered index}): chỉ đánh chỉ mục những dòng thoả mệnh đề \texttt{WHERE}, nên nhỏ hơn, rẻ hơn khi ghi và có thể kết hợp với \texttt{UNIQUE} để biểu diễn ràng buộc chỉ áp dụng cho một phần dữ liệu.
+    \item \textbf{Thứ tự khoá} \texttt{ASC}/\texttt{DESC} cho từng cột, giúp tránh bước sắp xếp khi truy vấn có \texttt{ORDER BY} khớp với thứ tự của chỉ mục.
+\end{itemize}
+
+\paragraph{Chỉ mục toàn văn (Full-Text Index).} Để tìm kiếm theo từ trong văn bản dài, SQL Server cung cấp \emph{full-text index}, một chỉ mục đảo được lưu trong \emph{full-text catalog}. Khi đánh chỉ mục, văn bản được tách từ bởi \emph{word breaker} của ngôn ngữ tương ứng, và có thể bỏ dấu khi catalog được tạo với \texttt{ACCENT\_SENSITIVITY = OFF}. Truy vấn dùng các vị từ \texttt{CONTAINS}, \texttt{FREETEXT} hoặc các hàm \texttt{CONTAINSTABLE}, \texttt{FREETEXTTABLE} để hỗ trợ tìm theo tiền tố, cụm từ và xếp hạng mức độ liên quan. Mỗi bảng chỉ có một full-text index.
+
+\paragraph{Các loại chỉ mục khác.} SQL Server còn có \emph{columnstore index} (lưu dữ liệu theo cột, nén cao, phù hợp truy vấn phân tích trên bảng lớn), \emph{spatial index}, \emph{XML index} và chỉ mục băm cho bảng tối ưu bộ nhớ (\emph{memory-optimized}).
+
+\paragraph{Thống kê và bộ tối ưu truy vấn.} SQL Server không bắt buộc người dùng chỉ định chỉ mục. Với mỗi chỉ mục, hệ thống duy trì \emph{thống kê} (\emph{statistics}) gồm histogram phân bố giá trị của cột khoá đầu tiên và mật độ của các tiền tố khoá. Bộ tối ưu dựa trên chi phí (\emph{cost-based optimizer}) dùng thống kê này để ước lượng số dòng khớp và tự quyết định giữa Index Seek, Index Scan, Key Lookup hay Table Scan. Thống kê được tự động cập nhật khi lượng dữ liệu thay đổi vượt một ngưỡng.
+
+\paragraph{Bảo trì chỉ mục.} Khi một dòng được chèn vào trang đã đầy, SQL Server tách trang (\emph{page split}), chuyển một nửa số dòng sang trang mới. Theo thời gian, việc tách trang gây \emph{phân mảnh} (\emph{fragmentation}): thứ tự logical của các trang không còn trùng với thứ tự vật lý, và các trang chứa nhiều khoảng trống. Tham số \texttt{FILLFACTOR} cho phép chừa sẵn khoảng trống khi tạo chỉ mục, còn các lệnh \texttt{ALTER INDEX \ldots{} REORGANIZE} và \texttt{ALTER INDEX \ldots{} REBUILD} dùng để sắp xếp lại hoặc xây lại chỉ mục khi phân mảnh tăng cao.
+
+% -------------------------------------------------------------------
+\subsubsection{Cơ chế chỉ mục trên Redis}
+\label{subsubsec:indexing-redis}
+
+\paragraph{Chỉ mục chính: không gian khoá là một bảng băm.} Redis là kho key--value lưu toàn bộ dữ liệu trong bộ nhớ. Mỗi cơ sở dữ liệu logic của Redis là một từ điển (\emph{dict}) ánh xạ tên key tới giá trị, được hiện thực bằng bảng băm với kỹ thuật xử lý xung đột bằng danh sách liên kết~\cite{redisdocs}. Vì vậy, truy cập theo tên key luôn có chi phí trung bình $O(1)$ và có thể xem tên key là ``chỉ mục chính'' duy nhất mà Redis cung cấp sẵn. Khi bảng băm cần mở rộng hoặc thu nhỏ, Redis không băm lại toàn bộ cùng lúc mà thực hiện \emph{băm lại tăng dần} (\emph{incremental rehashing}): duy trì song song hai bảng và di chuyển dần từng bucket sang bảng mới qua mỗi thao tác, để không có thao tác nào bị chặn lâu.
+
+\paragraph{Không có chỉ mục phụ tự động.} Redis lõi không có khái niệm lược đồ, cột hay chỉ mục phụ. Muốn tìm các giá trị theo một trường không phải tên key (ví dụ ``các sản phẩm thuộc một danh mục có giá dưới 100''), có hai cách: duyệt toàn bộ không gian khoá bằng \texttt{SCAN} với chi phí $O(N)$, hoặc để ứng dụng \textbf{tự xây dựng và tự duy trì} cấu trúc chỉ mục bằng các kiểu dữ liệu sẵn có~\cite{carlson2013redis}. Mọi lệnh ghi dữ liệu gốc khi đó phải đi kèm lệnh cập nhật chỉ mục, thường được gộp trong \texttt{MULTI}/\texttt{EXEC} hoặc một script Lua để giữ tính nhất quán.
+
+\paragraph{Chỉ mục phụ tự xây dựng bằng kiểu dữ liệu Redis.} Các mẫu chỉ mục phổ biến gồm:
+
+\begin{itemize}
+    \item \textbf{Set làm chỉ mục theo giá trị:} mỗi giá trị của một trường có một Set chứa các định danh tương ứng, ví dụ \texttt{category:book} chứa id các sản phẩm thuộc danh mục sách. Điều kiện ``và'' giữa nhiều trường được thực hiện bằng phép giao \texttt{SINTER}, điều kiện ``hoặc'' bằng phép hợp \texttt{SUNION}.
+    \item \textbf{Sorted Set làm chỉ mục theo khoảng và sắp xếp:} điểm (\emph{score}) của mỗi phần tử là giá trị số cần sắp xếp, ví dụ giá bán hoặc thời điểm tạo dạng epoch. Sorted Set được hiện thực bằng một \emph{skip list} kết hợp với bảng băm, nên tìm theo khoảng điểm (\texttt{ZRANGE \ldots{} BYSCORE}) có chi phí $O(\log N + M)$ và lấy theo thứ hạng (\texttt{ZRANGE} với vị trí) cũng có chi phí $O(\log N + M)$, với $M$ là số phần tử trả về. Với tập nhỏ, Redis dùng biểu diễn \emph{listpack} gọn hơn để tiết kiệm bộ nhớ.
+    \item \textbf{Sorted Set làm chỉ mục kết hợp:} nhúng trường so sánh bằng vào tên key và dùng trường khoảng làm score, ví dụ \texttt{by\_price:book}, tương tự một chỉ mục kết hợp (\texttt{Category}, \texttt{Price}) của SQL Server. Khi mọi phần tử có cùng score, Sorted Set được sắp theo thứ tự từ điển, cho phép tìm theo tiền tố chuỗi bằng \texttt{ZRANGE \ldots{} BYLEX}.
+\end{itemize}
+
+Ví dụ một chỉ mục phụ tự xây dựng:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+HSET product:42 Name "Notebook" Category book Price 45
+SADD category:book 42                         -- chỉ mục theo giá trị
+ZADD by_price 45 42                           -- chỉ mục theo khoảng
+ZRANGE by_price 0 100 BYSCORE                 -- sản phẩm có giá <= 100
+\end{minted}
+
+\paragraph{Module RediSearch: chỉ mục phụ do Redis quản lý.} Redis Stack tích hợp module \textbf{RediSearch}, bổ sung khả năng đánh chỉ mục phụ tự động cho dữ liệu dạng Hash hoặc JSON~\cite{redisdocs}. Lệnh \texttt{FT.CREATE} khai báo một chỉ mục gồm tiền tố key cần theo dõi, một lược đồ các trường cùng loại chỉ mục, và tuỳ chọn một biểu thức lọc. Sau đó, mọi lệnh ghi lên các Hash có tiền tố tương ứng đều được module tự động cập nhật vào chỉ mục, ứng dụng không phải tự duy trì. Các loại trường chính gồm:
+
+\begin{itemize}
+    \item \texttt{TEXT}: chỉ mục đảo dùng cho tìm kiếm toàn văn, có tách từ, xếp hạng mức độ liên quan và tuỳ chọn \texttt{NOSTEM} để tắt việc rút gọn từ về gốc.
+    \item \texttt{TAG}: chỉ mục theo giá trị chính xác, phù hợp với trạng thái, thể loại hoặc các mã liệt kê.
+    \item \texttt{NUMERIC}: chỉ mục theo khoảng số, được tổ chức dưới dạng cây phân khoảng.
+    \item \texttt{GEO} và \texttt{VECTOR}: chỉ mục toạ độ địa lý và chỉ mục vector cho tìm kiếm tương đồng.
+\end{itemize}
+
+Tuỳ chọn \texttt{SORTABLE} giữ thêm một bản sao giá trị để sắp xếp kết quả nhanh với \texttt{SORTBY}, còn \texttt{FILTER} cho phép chỉ đánh chỉ mục các Hash thoả một điều kiện, tương tự filtered index của SQL Server. Truy vấn được thực hiện bằng \texttt{FT.SEARCH} hoặc \texttt{FT.AGGREGATE}:
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+FT.CREATE idx:product ON HASH PREFIX 1 product:
+    SCHEMA Name TEXT NOSTEM
+           Category TAG
+           Price NUMERIC SORTABLE
+FT.SEARCH idx:product "@Category:{book} @Price:[0 100]"
+    SORTBY Price ASC LIMIT 0 20
+\end{minted}
+
+\paragraph{Đặc điểm chung của chỉ mục trên Redis.} Dù xây dựng thủ công hay qua RediSearch, chỉ mục trên Redis đều nằm hoàn toàn trong bộ nhớ, nên mỗi chỉ mục làm tăng trực tiếp lượng RAM sử dụng. Redis cũng không có bộ tối ưu truy vấn dựa trên chi phí như SQL Server: với chỉ mục tự xây dựng, ứng dụng phải tự chọn cấu trúc và thứ tự thao tác; với RediSearch, kế hoạch thực thi được suy ra trực tiếp từ biểu thức truy vấn. Ngoài ra, \texttt{FT.SEARCH} mặc định chỉ trả về tối đa 10\,000 kết quả (\texttt{MAXSEARCHRESULTS}), nên việc phân trang sâu trên tập kết quả lớn bị giới hạn.
+
+% -------------------------------------------------------------------
+\subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
+\label{subsubsec:indexing-experiment}
+
+\paragraph{Môi trường và dữ liệu.}
+\begin{itemize}
+    \item SQL Server 2019 Express trên AWS RDS (db.t3.micro); Redis Stack 7.4 (có module RediSearch) chạy trong Docker.
+    \item Dữ liệu là bảng truyện \texttt{Story} với 100 và 1\,000 dòng, sinh theo cùng một quy tắc cho cả hai DBMS. Trên SQL Server, mỗi truyện là một dòng; trên Redis, mỗi truyện là một Hash \texttt{story:<id>}. Khoảng 86\% truyện ở trạng thái công khai.
+    \item Trên SQL Server, bảng ban đầu chỉ có clustered index trên khoá chính \texttt{StoryId}; mỗi kịch bản tạo chỉ mục cần thử, đo, rồi xoá đi.
+    \item Thời gian được đo phía server, không tính độ trễ mạng: SQL Server đo bằng \texttt{SYSDATETIME()} quanh vòng lặp chạy truy vấn; Redis lấy tổng thời gian thực thi lệnh ghi trong \texttt{SLOWLOG}. Mỗi số liệu là trung vị (p50) của 20 lần đo. Với SQL Server, số trang dữ liệu phải đọc (\emph{logical reads}) được ghi thêm.
+    \item Trong mỗi kịch bản, mọi biến thể đều được kiểm tra trả về cùng một tập kết quả, để việc so sánh tốc độ là công bằng.
+    \item Để dễ đọc, tên key Redis trong phần này được viết rút gọn.
+\end{itemize}
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I1 -- Tra cứu theo một cột.}
+
+\textbf{Mục đích:} kiểm tra lợi ích cơ bản nhất của chỉ mục là tìm nhanh các dòng theo giá trị của một cột không phải khoá chính. Hai truy vấn được dùng: tìm đúng một truyện theo \texttt{Slug} (giá trị duy nhất) và tìm các truyện của một tác giả theo \texttt{AuthorId} (vài dòng).
+
+\textbf{SQL Server:} chạy truy vấn khi chưa có chỉ mục (phải quét toàn bảng) và sau khi tạo một nonclustered index trên cột cần tìm.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT StoryId, Title, Slug, CompletionStatus, ChapterCount, RatingAvg
+FROM Story WHERE Slug = @slug;          -- tương tự: WHERE AuthorId = @authorId
+
+CREATE NONCLUSTERED INDEX IX_Slug   ON Story (Slug);
+CREATE NONCLUSTERED INDEX IX_Author ON Story (AuthorId);
+\end{minted}
+
+\textbf{Redis:} so sánh ba cách: duyệt toàn bộ key bằng \texttt{SCAN} rồi lọc từng Hash; chỉ mục tự xây (String ánh xạ slug sang id, Set chứa id truyện của mỗi tác giả); và chỉ mục RediSearch với trường \texttt{TAG}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+SCAN 0 MATCH story:* COUNT 1000          -- rồi HGET từng Hash để so sánh Slug
+GET slug:<slug>        -> HGETALL story:<id>       -- index tự xây
+SMEMBERS author:<id>   -> HGETALL story:<id> ...
+FT.SEARCH idx:story "@Slug:{<slug>}"                -- RediSearch TAG
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{Theo Slug (ms)} & \textbf{Theo AuthorId (ms)} \\ \hline
+SQL Server & Không chỉ mục (đọc 74 trang) & 1,665 & 0,716 \\ \hline
+SQL Server & Nonclustered index (đọc 4 / 10 trang) & 0,054 & 0,053 \\ \hline
+Redis & \texttt{SCAN} toàn bộ key & 2,383 & 1,923 \\ \hline
+Redis & Chỉ mục tự xây & 0,004 & 0,032 \\ \hline
+Redis & RediSearch \texttt{TAG} & 0,029 & 0,039 \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I1 (1\,000 truyện)}
+\label{tab:idx-i1}
+\end{table}
+
+\textbf{Nhận xét:} chỉ mục giúp SQL Server đọc từ 74 trang xuống còn 4--10 trang và nhanh hơn 13--30 lần. Redis không có chỉ mục phụ sẵn nên khi dùng \texttt{SCAN} còn chậm hơn SQL Server quét bảng; khi có chỉ mục tự xây, việc tra cứu chỉ còn một lệnh \texttt{GET} và nhanh nhất trong các biến thể.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I2 -- Chỉ mục nhiều cột.}
+
+\textbf{Mục đích:} kiểm tra chỉ mục khi truy vấn lọc theo nhiều điều kiện, như bộ lọc ``truyện đã hoàn thành có điểm đánh giá từ X trở lên'' (khoảng 5\% số truyện khớp). Kịch bản so sánh chỉ mục kết hợp (composite) với chỉ mục bao phủ (covering), loại chứa sẵn cả các cột cần trả về.
+
+\textbf{SQL Server:}
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT StoryId, Title, RatingAvg, ChapterCount
+FROM Story
+WHERE CompletionStatus = @status AND RatingAvg >= @minRating;
+
+-- composite: chỉ chứa 2 cột lọc
+CREATE NONCLUSTERED INDEX IX_Status_Rating ON Story (CompletionStatus, RatingAvg);
+-- covering: thêm các cột cần trả về bằng INCLUDE
+CREATE NONCLUSTERED INDEX IX_Status_Rating_Cover ON Story (CompletionStatus, RatingAvg)
+    INCLUDE (Title, ChapterCount);
+\end{minted}
+
+\textbf{Redis:} ngoài \texttt{SCAN}, dùng một Sorted Set cho mỗi trạng thái với điểm là \texttt{RatingAvg} (tên key mang điều kiện ``bằng'', điểm mang điều kiện ``khoảng'', tương đương chỉ mục kết hợp), hoặc RediSearch với trường \texttt{TAG} và \texttt{NUMERIC}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+ZRANGE by_rating:<status> <minRating> +inf BYSCORE   -- rồi HMGET từng truyện
+FT.SEARCH idx:story "@CompletionStatus:{<status>} @RatingAvg:[<minRating> +inf]"
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{100 truyện (ms)} & \textbf{1\,000 truyện (ms)} & \textbf{Trang đọc (1\,000)} \\ \hline
+SQL Server & Không chỉ mục & 0,116 & 1,137 & 74 \\ \hline
+SQL Server & Composite & 0,114 & 1,104 & 74 \\ \hline
+SQL Server & Covering & 0,125 & 0,515 & 5 \\ \hline
+Redis & \texttt{SCAN} toàn bộ key & 0,465 & 2,224 & -- \\ \hline
+Redis & Sorted Set theo trạng thái & 0,036 & 0,150 & -- \\ \hline
+Redis & RediSearch & 0,048 & 0,158 & -- \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I2}
+\label{tab:idx-i2}
+\end{table}
+
+\textbf{Nhận xét:} dù có composite index, bộ tối ưu của SQL Server vẫn chọn quét bảng (74 trang), vì với khoảng 50 dòng khớp, việc tra ngược từng dòng để lấy \texttt{Title}, \texttt{ChapterCount} (Key Lookup) tốn hơn quét toàn bộ. Covering index chứa sẵn các cột này nên được dùng, chỉ đọc 5 trang và nhanh gấp đôi. Redis không có bộ tối ưu: cấu trúc nào được dùng là do ứng dụng chọn, và cả Sorted Set lẫn RediSearch đều nhanh hơn \texttt{SCAN} khoảng 14 lần.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I3 -- Sắp xếp và phân trang.}
+
+\textbf{Mục đích:} kiểm tra chỉ mục khi truy vấn cần kết quả đã sắp xếp và chia trang, như danh sách ``truyện mới cập nhật'' trên trang chủ, mỗi trang 20 truyện. Mỗi biến thể được đo ở trang đầu và ở trang nằm giữa danh sách, để thấy ảnh hưởng của độ sâu trang. Hai cách phân trang được so sánh: \texttt{OFFSET} (bỏ qua $n$ dòng đầu) và \emph{keyset} (lấy tiếp các dòng sau dòng cuối của trang trước).
+
+\textbf{SQL Server:}
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+-- Phân trang bằng OFFSET
+SELECT StoryId, Title, ChapterCount, LastChapterAt
+FROM Story
+WHERE PublishStatus = 'PUBLISHED' AND IsDeleted = 0 AND LastChapterAt IS NOT NULL
+ORDER BY LastChapterAt DESC, StoryId DESC
+OFFSET @offset ROWS FETCH NEXT 20 ROWS ONLY;
+
+-- Phân trang bằng keyset: tiếp tục sau dòng cuối (@lastTime, @lastId) của trang trước
+... AND (LastChapterAt < @lastTime OR (LastChapterAt = @lastTime AND StoryId < @lastId))
+ORDER BY LastChapterAt DESC, StoryId DESC;   -- lấy TOP (20)
+
+-- Chỉ mục có đúng thứ tự sắp xếp của truy vấn
+CREATE NONCLUSTERED INDEX IX_Public_Last
+    ON Story (PublishStatus, IsDeleted, LastChapterAt DESC, StoryId DESC)
+    INCLUDE (Title, ChapterCount);
+\end{minted}
+
+\textbf{Redis:} một Sorted Set chứa các truyện công khai với điểm là thời điểm cập nhật; trang được lấy theo thứ hạng hoặc theo điểm. Biến thể RediSearch dùng \texttt{SORTBY} với \texttt{LIMIT}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+ZRANGE public:by_last <offset> <offset+19> REV                        -- theo thứ hạng
+ZRANGE public:by_last <lastTime> -inf BYSCORE REV LIMIT 0 20         -- keyset
+FT.SEARCH idx:story "@PublishStatus:{PUBLISHED} @IsDeleted:{0}"
+    SORTBY LastChapterAt DESC LIMIT <offset> 20
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{Trang đầu (ms)} & \textbf{Trang giữa (ms)} \\ \hline
+SQL Server & Không chỉ mục (phải sắp xếp) & 2,995 & 2,991 \\ \hline
+SQL Server & Chỉ mục + \texttt{OFFSET} & 0,050 & 0,330 \\ \hline
+SQL Server & Chỉ mục + keyset & -- & 0,191 \\ \hline
+Redis & Sorted Set theo thứ hạng & 0,075 & 0,064 \\ \hline
+Redis & Sorted Set keyset & -- & 0,090 \\ \hline
+Redis & RediSearch \texttt{SORTBY} & 0,174 & 0,339 \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I3 (1\,000 truyện)}
+\label{tab:idx-i3}
+\end{table}
+
+\textbf{Nhận xét:} khi chỉ mục có sẵn đúng thứ tự cần sắp xếp, SQL Server không còn phải sắp xếp toàn bộ dữ liệu và trả trang đầu nhanh hơn khoảng 60 lần. Với \texttt{OFFSET}, các dòng bị bỏ qua vẫn phải đọc nên trang càng sâu càng chậm; keyset tránh được điều này. Sorted Set của Redis cho thời gian gần như không đổi ở mọi độ sâu, trong khi \texttt{SORTBY} của RediSearch chậm dần giống \texttt{OFFSET}.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I4 -- Chỉ mục có lọc (filtered index).}
+
+\textbf{Mục đích:} các truy vấn công khai chỉ đọc truyện đang công khai, nên không cần đưa truyện nháp, truyện bị ẩn hay đã xoá vào chỉ mục. Kịch bản so sánh chỉ mục trên toàn bộ dữ liệu với chỉ mục chỉ chứa phần dữ liệu cần dùng, về dung lượng và tốc độ lấy trang đầu tiên.
+
+\textbf{SQL Server:}
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+-- Chỉ mục đầy đủ: mọi truyện
+CREATE NONCLUSTERED INDEX IX_Last_All
+    ON Story (PublishStatus, IsDeleted, LastChapterAt DESC) INCLUDE (Title, ChapterCount);
+-- Filtered index: chỉ truyện công khai
+CREATE NONCLUSTERED INDEX IX_Last_Public
+    ON Story (LastChapterAt DESC) INCLUDE (Title, ChapterCount)
+    WHERE PublishStatus = 'PUBLISHED' AND IsDeleted = 0;
+\end{minted}
+
+\textbf{Redis:} Sorted Set chứa mọi truyện (phải lọc lại trạng thái khi đọc), Sorted Set chỉ chứa truyện công khai, và chỉ mục RediSearch khai báo với \texttt{FILTER}.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+FT.CREATE idx:public ON HASH PREFIX 1 story:
+    FILTER "@PublishStatus=='PUBLISHED' && @IsDeleted=='0'"
+    SCHEMA LastChapterAt NUMERIC SORTABLE
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{Số mục} & \textbf{Dung lượng (KB)} & \textbf{Thời gian (ms)} \\ \hline
+SQL Server & Chỉ mục đầy đủ & 1\,000 & 104 & 0,047 \\ \hline
+SQL Server & Filtered index & 856 & 80 & 0,036 \\ \hline
+Redis & Sorted Set mọi truyện & 1\,000 & 93 & 0,113 \\ \hline
+Redis & Sorted Set truyện công khai & 856 & 80 & 0,071 \\ \hline
+Redis & RediSearch \texttt{FILTER} & 856 & 133 & 0,156 \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I4 (1\,000 truyện)}
+\label{tab:idx-i4}
+\end{table}
+
+\textbf{Nhận xét:} chỉ đánh chỉ mục phần dữ liệu cần truy vấn giúp chỉ mục nhỏ hơn khoảng 20\% và truy vấn nhanh hơn ở cả hai DBMS. SQL Server hỗ trợ trực tiếp bằng mệnh đề \texttt{WHERE} khi tạo chỉ mục; với Sorted Set, ứng dụng phải tự quyết định truyện nào được thêm hoặc xoá khỏi tập. Chỉ mục RediSearch tốn bộ nhớ nhiều hơn Sorted Set tự xây.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I5 -- Tìm kiếm toàn văn.}
+
+\textbf{Mục đích:} kiểm tra chức năng tìm truyện theo từ khoá trong tên và phần giới thiệu. Người dùng có thể gõ có dấu hoặc không dấu, nên ngoài tốc độ, kịch bản đo thêm \emph{recall}, tức tỉ lệ số truyện tìm được so với số truyện thực sự chứa từ khoá (261 truyện ở mức 1\,000 dòng).
+
+\textbf{SQL Server:} so sánh tìm chuỗi con bằng \texttt{LIKE} (phải đọc mọi dòng) với full-text index dùng \texttt{CONTAINSTABLE}. Full-text index được tạo với bộ tách từ tiếng Việt trên catalog không phân biệt dấu.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT StoryId, Title FROM Story
+WHERE Title LIKE N'%' + @word + N'%' OR Description LIKE N'%' + @word + N'%';
+
+CREATE FULLTEXT INDEX ON Story (Title LANGUAGE 1066, Description LANGUAGE 1066)
+    KEY INDEX PK_Story ON ftc_Novelle;
+SELECT s.StoryId, s.Title
+FROM Story s JOIN CONTAINSTABLE(Story, (Title, Description), @word) ft ON ft.[KEY] = s.StoryId;
+\end{minted}
+
+\textbf{Redis:} so sánh \texttt{SCAN} với chỉ mục RediSearch trường \texttt{TEXT}, và một biến thể trong đó ứng dụng lưu thêm trường \texttt{SearchText} là tên và giới thiệu đã bỏ dấu.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+FT.CREATE idx:text ON HASH PREFIX 1 story: SCHEMA Title TEXT NOSTEM Description TEXT NOSTEM
+FT.SEARCH idx:text "@Title|Description:(<từ khoá>)"
+FT.CREATE idx:ascii ON HASH PREFIX 1 story: SCHEMA SearchText TEXT NOSTEM
+FT.SEARCH idx:ascii "@SearchText:(<từ khoá đã bỏ dấu>)"
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{Thời gian (ms)} & \textbf{Recall gõ có dấu} & \textbf{Recall gõ không dấu} \\ \hline
+SQL Server & \texttt{LIKE} & 30,23 & 100\% & 0\% \\ \hline
+SQL Server & Full-text \texttt{CONTAINSTABLE} & 3,33 & 100\% & 100\% \\ \hline
+Redis & \texttt{SCAN} & 6,57 & 39\% & 0\% \\ \hline
+Redis & RediSearch \texttt{TEXT} & 0,28 & 39\% & 0\% \\ \hline
+Redis & RediSearch trường bỏ dấu & 0,41 & 100\% & 100\% \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I5 (1\,000 truyện)}
+\label{tab:idx-i5}
+\end{table}
+
+\textbf{Nhận xét:} full-text index của SQL Server nhanh hơn \texttt{LIKE} khoảng 9 lần và tìm đủ cả khi người dùng gõ không dấu, nhờ bộ tách từ tiếng Việt. RediSearch nhanh hơn về thời gian nhưng không hiểu dấu tiếng Việt, nên chỉ tìm được 39\% số truyện; muốn đạt 100\%, ứng dụng phải tự chuẩn hoá và lưu thêm một bản văn bản đã bỏ dấu.
+
+% -------------------------------------------------------------------
+\paragraph{Kịch bản I7 -- Chi phí ghi khi có chỉ mục.}
+
+\textbf{Mục đích:} chỉ mục làm đọc nhanh hơn nhưng mỗi lần ghi phải cập nhật thêm chỉ mục. Kịch bản đo thời gian thêm một truyện và cập nhật điểm đánh giá của một truyện khi bảng có 0 và 3 chỉ mục phụ (trên \texttt{RatingAvg}, \texttt{AuthorId} và \texttt{Slug} duy nhất).
+
+\textbf{SQL Server:}
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+INSERT INTO Story (StoryId, AuthorId, Title, Slug, ..., RatingAvg, ...) SELECT ...;
+UPDATE Story SET RatingAvg = RatingAvg + 0.01 WHERE StoryId = @id;
+
+CREATE NONCLUSTERED INDEX IX_Rating ON Story (RatingAvg);
+CREATE NONCLUSTERED INDEX IX_Author ON Story (AuthorId);
+CREATE UNIQUE NONCLUSTERED INDEX UX_Slug ON Story (Slug);
+\end{minted}
+
+\textbf{Redis:} với chỉ mục tự xây, ứng dụng phải ghi Hash và cập nhật cả ba cấu trúc chỉ mục trong cùng một giao dịch \texttt{MULTI}/\texttt{EXEC}; với RediSearch, chỉ cần ghi Hash và module tự cập nhật chỉ mục.
+
+\begin{minted}[fontsize=\small,frame=single,breaklines]{text}
+MULTI
+HSET story:<id> ... RatingAvg <r>
+ZADD by_rating <r> <id>
+SADD author:<authorId> <id>
+SET  slug:<slug> <id>
+EXEC
+\end{minted}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|l|r|r|}
+\hline
+\textbf{DBMS} & \textbf{Biến thể} & \textbf{INSERT (ms)} & \textbf{UPDATE (ms)} \\ \hline
+SQL Server & 0 chỉ mục phụ (đọc 6 / 2 trang) & 1,290 & 1,216 \\ \hline
+SQL Server & 3 chỉ mục phụ (đọc 15 / 6 trang) & 1,507 & 1,313 \\ \hline
+Redis & Không chỉ mục & 0,009 & 0,005 \\ \hline
+Redis & 3 chỉ mục tự xây (\texttt{MULTI}) & 0,019 & 0,013 \\ \hline
+Redis & 3 trường RediSearch & 0,037 & 0,021 \\ \hline
+\end{tabular}
+\caption{Kết quả kịch bản I7 (1\,000 truyện)}
+\label{tab:idx-i7}
+\end{table}
+
+\textbf{Nhận xét:} với 3 chỉ mục phụ, lệnh \texttt{INSERT} của SQL Server phải đọc và ghi nhiều trang gấp 2,5 lần và chậm hơn khoảng 17\%. Trên Redis, chi phí ghi tăng 2--4 lần, nhưng giá trị tuyệt đối vẫn ở mức micro giây; đổi lại, với chỉ mục tự xây, việc giữ chỉ mục khớp với dữ liệu hoàn toàn do ứng dụng đảm nhận.
+
+% -------------------------------------------------------------------
+\subsubsection{So sánh và đánh giá}
+\label{subsubsec:indexing-compare}
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{3.2cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Tiêu chí} & \textbf{MS SQL Server} & \textbf{Redis} \\ \hline
+Tra cứu theo khoá / một cột & Nhanh khi có nonclustered index (khoảng 0,05~ms) & Nhanh nhất qua tên key hoặc index tự xây (khoảng 0,004~ms) \\ \hline
+Truy vấn nhiều điều kiện & Bộ tối ưu tự chọn; cần covering index để thực sự được dùng & Phải tự thiết kế Sorted Set kết hợp hoặc dùng RediSearch \\ \hline
+Sắp xếp và phân trang & Cần index đúng thứ tự; \texttt{OFFSET} chậm dần theo độ sâu & Sorted Set ổn định ở mọi độ sâu \\ \hline
+Tìm toàn văn tiếng Việt & Full-text hỗ trợ tách từ và bỏ dấu, tìm đúng 100\% & Nhanh nhưng phải tự chuẩn hoá dấu \\ \hline
+Chi phí duy trì chỉ mục & Tự động, nhất quán trong giao dịch & Tự xây thì ứng dụng phải tự đồng bộ; RediSearch tự động nhưng tốn bộ nhớ \\ \hline
+Thời gian tuyệt đối & Mức trăm micro giây đến mili giây & Mức micro giây, nhanh hơn 3--240 lần \\ \hline
+\end{tabularx}
+\caption{So sánh cơ chế chỉ mục của SQL Server và Redis}
+\label{tab:idx-compare}
+\end{table}
+
+\paragraph{Kết luận cho hệ thống Novelle.}
+\begin{itemize}
+    \item \textbf{SQL Server là nơi đặt các chỉ mục nghiệp vụ chính:} bộ lọc nhiều điều kiện, chỉ mục duy nhất và filtered index để bảo đảm ràng buộc, full-text index cho tìm kiếm truyện tiếng Việt. Chỉ mục được cập nhật tự động trong cùng giao dịch nên dữ liệu luôn nhất quán.
+    \item \textbf{Redis dùng cho truy cập theo khoá với tần suất cao:} bộ nhớ đệm chi tiết truyện, chương, trang chủ và các bộ đếm, nơi tên key đã đóng vai trò chỉ mục và cho thời gian truy cập thấp nhất.
+    \item Không xây dựng chỉ mục phụ trên Redis cho dữ liệu nghiệp vụ, vì ứng dụng phải tự duy trì tính nhất quán với SQL Server và RediSearch không xử lý tốt tiếng Việt có dấu.
+\end{itemize}
