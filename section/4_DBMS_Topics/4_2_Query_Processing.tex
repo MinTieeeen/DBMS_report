@@ -2,13 +2,645 @@
 \label{subsec:query-processing}
 
 \subsubsection{Cơ sở lý thuyết}
-% TODO
+
+\paragraph{Quy trình xử lý truy vấn và kế hoạch thực thi.}
+SQL là ngôn ngữ \textit{khai báo} (declarative): câu truy vấn chỉ mô tả \textit{dữ liệu cần lấy}, còn \textit{cách lấy}, gồm đọc bảng nào trước, có dùng index hay không, kết nối các bảng bằng thuật toán nào, do hệ quản trị cơ sở dữ liệu quyết định. Quá trình xử lý một câu truy vấn gồm ba bước (Hình~\ref{fig:qp-steps})~\cite{silberschatz2019database, elmasri2016fundamentals}:
+\begin{enumerate}
+    \item \textbf{Phân tích cú pháp và dịch}: kiểm tra câu lệnh và các bảng, cột được nhắc đến, rồi dịch sang một biểu thức \textit{đại số quan hệ}.
+    \item \textbf{Tối ưu hoá}: bộ tối ưu hoá (query optimizer) xét các cách thực hiện tương đương và chọn cách có chi phí ước lượng thấp nhất.
+    \item \textbf{Thực thi}: bộ máy thực thi chạy cách đã chọn trên dữ liệu và trả kết quả.
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        >=latex, thick,
+        proc/.style={draw, rounded corners, fill=gray!15, minimum width=4.2cm, minimum height=0.9cm, align=center},
+        data/.style={draw, minimum width=4.2cm, minimum height=0.8cm, align=center},
+        side/.style={draw, dashed, minimum width=3.6cm, minimum height=0.8cm, align=center}
+    ]
+        \node[data] (sql)    at (0, 0)    {Câu truy vấn SQL};
+        \node[proc] (parse)  at (0, -1.6) {Phân tích cú pháp và dịch};
+        \node[data] (ra)     at (0, -3.2) {Biểu thức đại số quan hệ};
+        \node[proc] (opt)    at (0, -4.8) {Tối ưu hoá};
+        \node[data] (plan)   at (0, -6.4) {Kế hoạch thực thi};
+        \node[proc] (exec)   at (0, -8.0) {Thực thi};
+        \node[data] (result) at (0, -9.6) {Kết quả truy vấn};
+        \node[side] (stats)  at (6, -4.8) {Thống kê về dữ liệu\\(catalog)};
+        \node[side] (store)  at (6, -8.0) {Dữ liệu};
+
+        \draw[->] (sql) -- (parse);
+        \draw[->] (parse) -- (ra);
+        \draw[->] (ra) -- (opt);
+        \draw[->] (opt) -- (plan);
+        \draw[->] (plan) -- (exec);
+        \draw[->] (exec) -- (result);
+        \draw[->] (stats) -- (opt);
+        \draw[<->] (store) -- (exec);
+    \end{tikzpicture}
+    \caption{Các bước xử lý một câu truy vấn (dựa theo \cite{silberschatz2019database})}
+    \label{fig:qp-steps}
+\end{figure}
+
+Kết quả của bước tối ưu hoá là một \textit{kế hoạch thực thi} (execution plan): một cây các phép toán, trong đó mỗi phép toán (chọn, kết nối, sắp xếp, gom nhóm\ldots) đi kèm một thuật toán cụ thể; các nút lá đọc dữ liệu từ bảng hoặc index, dữ liệu đi từ lá lên gốc~\cite{silberschatz2019database}. Một câu truy vấn có thể có nhiều kế hoạch cho cùng kết quả. Chẳng hạn, phép chọn $\sigma_{A = a}(r)$ có thể được thực hiện bằng cách \textit{đọc cả bảng} $r$ rồi giữ lại các dòng có $A = a$, hoặc \textit{dùng index} trên cột $A$ để tìm thẳng các dòng đó rồi đọc phần còn lại của từng dòng.
+
+\paragraph{Tối ưu hoá dựa trên chi phí.}
+Bộ tối ưu hoá chọn kế hoạch bằng cách \textit{ước lượng} chi phí của từng kế hoạch trước khi chạy. Thước đo chính là số trang (khối) phải đọc từ đĩa, trong đó đọc tuần tự nhiều trang liền nhau rẻ hơn đọc cùng số trang đó ở các vị trí rời rạc; ngoài ra còn tính chi phí CPU và bộ nhớ cho các phép sắp xếp, băm~\cite{silberschatz2019database}. Để ước lượng, hệ quản trị dùng \textit{thống kê} lưu trong danh mục hệ thống: số dòng của bảng, số giá trị khác nhau của mỗi cột, histogram phân bố giá trị. Từ đó nó ước lượng \textit{số dòng} (cardinality) mà mỗi bước tạo ra; ví dụ, với bảng $r$ có $n_r$ dòng và cột $A$ có $V(A, r)$ giá trị khác nhau, nếu giả định các giá trị phân bố đều thì điều kiện $A = a$ được ước lượng khoảng $n_r / V(A, r)$ dòng~\cite{silberschatz2019database}.
+
+Vì chi phí phụ thuộc vào dữ liệu, \textbf{kế hoạch được chọn cũng phụ thuộc vào dữ liệu}: cùng một câu truy vấn có thể được thực thi theo kế hoạch khác khi số dòng hoặc phân bố dữ liệu thay đổi. Với bảng nhỏ chỉ vài trang, đọc cả bảng có thể rẻ hơn dùng index; với bảng lớn, điều ngược lại xảy ra. Ước lượng chỉ là gần đúng: nếu số dòng ước lượng lệch nhiều so với thực tế, bộ tối ưu hoá có thể chọn sai kế hoạch. Phần thực nghiệm của đề tài kiểm chứng chính hai điều này: kế hoạch thay đổi thế nào khi dữ liệu tăng, và số dòng ước lượng so với thực tế.
+
+\paragraph{Các thuật toán chính.}
+Mỗi loại phép toán có một số thuật toán với chi phí khác nhau; bộ tối ưu hoá chọn giữa chúng~\cite{silberschatz2019database, elmasri2016fundamentals}.
+
+\begin{itemize}
+    \item \textbf{Phép chọn.} \textit{Quét tuần tự} đọc mọi trang của bảng, chi phí chỉ phụ thuộc kích thước bảng. \textit{Dùng index} tìm thẳng các dòng thoả điều kiện, nhưng nếu index không chứa đủ cột cần lấy thì mỗi dòng tìm được phải đọc thêm từ bảng, nên chi phí tăng theo số dòng thoả điều kiện; index chỉ có lợi khi điều kiện chọn lọc ít dòng. Với \textit{nhiều điều kiện} nối bằng \texttt{AND}, một điều kiện trên cột có index được \textit{dùng để tra index}, các điều kiện còn lại chỉ được \textit{kiểm tra lại} trên từng dòng đọc ra. Khi có \texttt{ORDER BY}, nếu dữ liệu đọc ra đã đúng thứ tự (theo một index) thì không cần sắp xếp, và nếu chỉ cần $N$ dòng đầu thì có thể dừng sớm khi đủ $N$ dòng.
+
+    \item \textbf{Phép kết nối.} Các thuật toán chính được tóm tắt trong Bảng~\ref{tab:join-algorithms}, với $r$ là bảng ngoài, $s$ là bảng trong, $n_r$ là số dòng và $b_r, b_s$ là số trang của mỗi bảng. Chi phí của indexed nested loop tăng theo \textit{số dòng cần ghép}, còn hash join và merge join tăng theo \textit{kích thước bảng}; vì vậy khi ít dòng cần ghép thì tra index từng dòng rẻ hơn, khi nhiều dòng thì đọc mỗi bảng một lượt rẻ hơn. Trong truy vấn kết nối nhiều bảng, thuật toán được chọn riêng cho từng phép kết nối, và bộ tối ưu hoá sắp xếp thứ tự công việc sao cho số dòng đi vào mỗi phép kết nối nhỏ nhất.
+
+    \item \textbf{Gom nhóm và hàm tổng hợp.} \textit{Dựa trên sắp xếp}: sắp các dòng theo khoá nhóm rồi cộng dồn lần lượt từng nhóm; nếu dữ liệu đã có thứ tự theo khoá nhóm thì bỏ được bước sắp xếp. \textit{Dựa trên băm}: giữ mỗi nhóm một ô trong bảng băm và cập nhật khi đọc từng dòng; không cần thứ tự nhưng cần bộ nhớ. Cả hai cách đều phải đọc mọi dòng cần tổng hợp, nên chi phí tăng theo số dòng đầu vào.
+
+    \item \textbf{Truy vấn con tương quan.} Truy vấn con dùng giá trị của dòng bên ngoài (ví dụ: nhân viên có lương cao hơn \textit{lương trung bình của phòng ban mình}) nếu làm theo nghĩa đen phải tính lại cho từng dòng bên ngoài. Bộ tối ưu hoá thường \textit{khử tương quan} (decorrelation): viết lại thành phép gom nhóm tính mỗi nhóm một lần rồi kết nối với bảng ngoài~\cite{silberschatz2019database}:
+\begin{verbatim}
+-- Original query (correlated subquery)
+SELECT e.Name FROM Employee e
+WHERE e.Salary > (SELECT AVG(e2.Salary) FROM Employee e2
+                  WHERE e2.DeptId = e.DeptId)
+
+-- After decorrelation
+SELECT e.Name FROM Employee e
+JOIN (SELECT DeptId, AVG(Salary) AS AvgSalary
+      FROM Employee GROUP BY DeptId) d ON d.DeptId = e.DeptId
+WHERE e.Salary > d.AvgSalary
+\end{verbatim}
+\end{itemize}
+
+\begin{table}[H]
+    \centering
+    \caption{Các thuật toán kết nối và chi phí (số trang đọc)}
+    \label{tab:join-algorithms}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} X >{\raggedright\arraybackslash}p{2.7cm} >{\raggedright\arraybackslash}p{3.4cm}}
+        \toprule
+        \textbf{Thuật toán} & \textbf{Cách làm} & \textbf{Chi phí} & \textbf{Phù hợp khi} \\
+        \midrule
+        Nested loop & Với mỗi dòng của $r$, duyệt toàn bộ $s$. & $n_r \cdot b_s + b_r$ & Hai bảng rất nhỏ. \\
+        \addlinespace
+        Indexed nested loop & Với mỗi dòng của $r$, tra index của $s$ theo cột kết nối. & $b_r + n_r \cdot c$ ($c$: chi phí một lần tra index) & Ít dòng cần ghép, $s$ có index trên cột kết nối. \\
+        \addlinespace
+        Merge join & Sắp hai bảng theo cột kết nối rồi duyệt song song. & $b_r + b_s$ (cộng chi phí sắp xếp nếu cần) & Hai bảng đã có thứ tự theo cột kết nối. \\
+        \addlinespace
+        Hash join & Dựng bảng băm từ bảng nhỏ hơn, rồi đọc bảng kia một lượt và tra bảng băm. & $b_r + b_s$ nếu bảng băm vừa bộ nhớ & Nhiều dòng cần ghép, không có thứ tự hay index phù hợp. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\paragraph{Hệ lưu trữ khoá--giá trị.}
+Ở các hệ lưu trữ khoá--giá trị (key--value) như Redis, ứng dụng không gửi câu truy vấn khai báo mà gửi trực tiếp các \textit{lệnh} trên từng khoá; mỗi lệnh có thuật toán và độ phức tạp cố định (ví dụ $O(1)$ hoặc $O(\log N)$). Không có bước dịch hay tối ưu hoá, cũng không có kết nối, truy vấn con hay gom nhóm trên dữ liệu thô: ``kế hoạch thực thi'' chính là chuỗi lệnh do người lập trình viết, được quyết định từ lúc thiết kế cách tổ chức dữ liệu~\cite{carlson2013redis, redisdocs}. Để trả lời nhanh, dữ liệu thường được chuẩn bị sẵn \textit{lúc ghi}: lưu trùng thông tin (phi chuẩn hoá), giữ các cấu trúc phụ đã sắp sẵn thứ tự, cộng dồn sẵn các giá trị tổng hợp. Đây là sự đánh đổi giữa hai hướng: hệ quan hệ linh hoạt, chỉ cần viết câu truy vấn mới, nhưng làm việc lúc đọc; hệ khoá--giá trị đọc rất nhanh, nhưng mỗi câu hỏi phải được thiết kế trước và các cấu trúc phụ phải được ứng dụng cập nhật mỗi khi dữ liệu thay đổi.
 
 \subsubsection{Cơ chế xử lý truy vấn trên MS SQL Server}
-% TODO
+
+\paragraph{Kiến trúc tổng quan.}
+Bộ máy cơ sở dữ liệu (Database Engine) của SQL Server gồm hai bộ phận chính tham gia xử lý truy vấn (Hình~\ref{fig:mssql-engines}):
+\begin{itemize}
+    \item \textbf{Relational Engine}: phân tích câu lệnh, chọn kế hoạch thực thi và chạy kế hoạch đó. Các yêu cầu đọc dữ liệu do Relational Engine điều khiển: nó quyết định \textit{cách truy cập} hiệu quả nhất, chẳng hạn quét bảng, quét index hay đọc theo khoá~\cite{mssqldocs}.
+    \item \textbf{Storage Engine}: quản lý các trang dữ liệu và index. Các thành phần \textit{access methods} và \textit{buffer manager} của nó quyết định cách đọc các trang~\cite{mssqldocs}. Vì đọc ghi đĩa là một trong những thao tác tốn kém nhất, SQL Server giữ các trang đã đọc trong một vùng bộ nhớ gọi là \textit{buffer pool} (hay buffer cache)~\cite{mssqldocs}.
+\end{itemize}
+Relational Engine chia mỗi câu lệnh thành các thao tác trên những tập dòng (rowset) mà Storage Engine mở từ các bảng gốc~\cite{msqueryarch}.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[>=latex, thick,
+        box/.style={draw, rounded corners, align=center, minimum width=5.2cm, minimum height=2.6cm},
+        small/.style={draw, align=center, minimum width=3.2cm, minimum height=0.8cm}]
+        \node[small] (app) at (0, 0) {Ứng dụng (client)};
+        \node[box, fill=gray!10] (re) at (0, -2.8) {\textbf{Relational Engine}\\[2pt]Phân tích câu lệnh\\Query Optimizer\\Thực thi kế hoạch\\Plan cache};
+        \node[box, fill=gray!10] (se) at (0, -6.4) {\textbf{Storage Engine}\\[2pt]Access methods\\Buffer manager\\Buffer pool (trang trong bộ nhớ)};
+        \node[small] (disk) at (0, -9.2) {File dữ liệu trên đĩa};
+        \draw[<->] (app) -- node[right, font=\small] {câu SQL / kết quả} (re);
+        \draw[<->] (re) -- node[right, font=\small] {yêu cầu dòng / trả dòng} (se);
+        \draw[<->] (se) -- node[right, font=\small] {đọc trang khi thiếu trong bộ nhớ} (disk);
+    \end{tikzpicture}
+    \caption{Hai bộ phận chính của SQL Server Database Engine (tổng hợp từ \cite{msqueryarch, mssqldocs})}
+    \label{fig:mssql-engines}
+\end{figure}
+
+\paragraph{Quy trình xử lý một câu lệnh.}
+Quá trình SQL Server xử lý một câu \texttt{SELECT} gồm các bước sau (Hình~\ref{fig:mssql-flow})~\cite{msqueryarch}:
+\begin{enumerate}
+    \item \textbf{Tra plan cache}: với mọi câu lệnh, SQL Server trước hết tìm trong bộ nhớ đệm kế hoạch (plan cache) xem đã có kế hoạch thực thi của đúng câu lệnh này chưa. Nếu có, kế hoạch đó được dùng lại và các bước 2--4 được bỏ qua.
+    \item \textbf{Phân tích cú pháp} (parser): quét câu lệnh và tách thành các đơn vị logic như từ khoá, biểu thức, toán tử và định danh.
+    \item \textbf{Xây dựng cây truy vấn} (query tree): mô tả các bước logic cần làm để biến dữ liệu nguồn thành dạng mà kết quả yêu cầu.
+    \item \textbf{Tối ưu hoá}: Query Optimizer phân tích các cách khác nhau để truy cập các bảng nguồn, chọn chuỗi bước trả kết quả nhanh nhất với ít tài nguyên nhất, và ghi chuỗi bước đó vào cây truy vấn. Phiên bản cuối cùng của cây sau khi tối ưu được gọi là \textit{kế hoạch thực thi} (execution plan).
+    \item \textbf{Thực thi}: Relational Engine bắt đầu chạy kế hoạch; ở các bước cần dữ liệu từ bảng gốc, nó yêu cầu các tập dòng tương ứng từ Storage Engine.
+    \item \textbf{Trả kết quả}: Relational Engine đưa dữ liệu nhận từ Storage Engine về đúng định dạng của kết quả và gửi cho client.
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[>=latex, thick,
+        proc/.style={draw, rounded corners, fill=gray!15, text width=6.2cm, minimum height=0.85cm, align=center},
+        io/.style={draw, text width=6.2cm, minimum height=0.8cm, align=center}]
+        \node[io]   (sql)   at (0, 0)     {Câu SQL};
+        \node[proc] (cache) at (0, -1.5)  {Tra plan cache};
+        \node[proc] (parse) at (0, -3.0)  {Phân tích cú pháp};
+        \node[proc] (tree)  at (0, -4.5)  {Xây dựng cây truy vấn};
+        \node[proc] (opt)   at (0, -6.0)  {Query Optimizer\\(lưu kế hoạch vào cache)};
+        \node[proc] (exec)  at (0, -7.7)  {Thực thi kế hoạch\\(Relational Engine $\leftrightarrow$ Storage Engine)};
+        \node[io]   (res)   at (0, -9.3)  {Kết quả};
+        \draw[->] (sql) -- (cache);
+        \draw[->] (cache) -- node[right, font=\small] {chưa có} (parse);
+        \draw[->] (parse) -- (tree);
+        \draw[->] (tree) -- (opt);
+        \draw[->] (opt) -- (exec);
+        \draw[->] (exec) -- (res);
+        \draw[->] (cache.east) -- (4.3, -1.5) -- node[right, font=\small, align=left] {đã có:\\dùng lại\\kế hoạch} (4.3, -7.7) -- (exec.east);
+    \end{tikzpicture}
+    \caption{Các bước xử lý một câu truy vấn trên SQL Server (tổng hợp từ \cite{msqueryarch})}
+    \label{fig:mssql-flow}
+\end{figure}
+
+\paragraph{Query Optimizer.}
+Query Optimizer của SQL Server là bộ tối ưu dựa trên chi phí: với mỗi kế hoạch khả dĩ, nó ước lượng lượng tài nguyên cần dùng, dựa vào thống kê về dữ liệu, và chọn kế hoạch có chi phí ước lượng thấp~\cite{msqueryarch}. Một câu lệnh phức tạp có thể có hàng nghìn kế hoạch khả dĩ, nên Optimizer không xét hết mọi tổ hợp mà tìm một kế hoạch có chi phí hợp lý trong thời gian dành cho việc tối ưu; vì vậy kế hoạch được chọn \textit{không nhất thiết} là kế hoạch có chi phí ước lượng thấp nhất~\cite{msqueryarch}.
+
+Vì tối ưu hoá tốn thời gian, kế hoạch được lưu trong plan cache để dùng lại. Một câu lệnh chỉ được coi là trùng với câu đã có kế hoạch nếu giống nhau \textit{từng ký tự}; do đó tách các hằng số ra thành tham số giúp SQL Server nhận ra các câu lệnh trùng nhau và dùng lại kế hoạch~\cite{msqueryarch}. Một kế hoạch đã lưu sẽ bị biên dịch lại khi các thay đổi trong cơ sở dữ liệu làm nó kém hiệu quả hoặc không còn hợp lệ, chẳng hạn khi bảng hoặc index liên quan thay đổi, hoặc khi thống kê mà kế hoạch sử dụng được cập nhật~\cite{msqueryarch}.
+
+\paragraph{Kế hoạch thực thi và các toán tử.}
+Kế hoạch thực thi xác định thứ tự truy cập các bảng nguồn, cách lấy dữ liệu từ mỗi bảng, và cách tính toán, lọc, gom nhóm, sắp xếp dữ liệu~\cite{mssqldocs}. Nó là một cây các \textit{toán tử vật lý}: toán tử \textit{logic} mô tả phép toán đại số quan hệ cần làm, còn toán tử \textit{vật lý} là cách thực hiện cụ thể phép toán đó~\cite{msshowplan}. Toán tử ngoài cùng bên trái là gốc; các toán tử hoạt động theo kiểu \textbf{kéo} (pull-based): mỗi toán tử có các phương thức \texttt{Open()}, \texttt{GetRow()} và \texttt{Close()}, toán tử gốc gọi \texttt{GetRow()} ở toán tử con, toán tử con lại gọi xuống con của nó, cho tới khi toán tử lá đọc một dòng từ bộ lưu trữ và trả ngược lên~\cite{msshowplan}. SQL Server cung cấp hai loại kế hoạch để xem:
+\begin{itemize}
+    \item \textbf{Kế hoạch ước lượng} (estimated execution plan): được tạo mà không chạy câu lệnh, không chứa thông tin lúc chạy; trong SQL Server Management Studio, xem bằng mục \textit{Display Estimated Execution Plan} của menu \textit{Query}~\cite{mssqldocs}.
+    \item \textbf{Kế hoạch thực tế} (actual execution plan): được tạo sau khi câu lệnh chạy xong, chứa thông tin lúc chạy như mức dùng tài nguyên và các cảnh báo; xem bằng mục \textit{Include Actual Execution Plan}~\cite{mssqldocs}.
+\end{itemize}
+Ngoài ra, \texttt{SET STATISTICS XML ON} trả về thông tin thực thi của từng câu lệnh sau khi chạy dưới dạng XML~\cite{mssqldocs}, và \texttt{SET STATISTICS IO ON} cho biết số trang đọc của câu lệnh: \textit{logical reads} là số trang đọc từ bộ nhớ đệm, \textit{physical reads} là số trang đọc từ đĩa~\cite{mssqldocs}.
+
+Khi đọc kế hoạch dạng đồ hoạ, mũi tên đi \textbf{từ phải sang trái}, thể hiện chiều đi của dữ liệu~\cite{msshowplan}. Các toán tử tìm theo index có thuộc tính \textbf{SeekPredicates}, là điều kiện dùng để tra index; ngoài ra có thể có thuộc tính \textbf{Predicate}, là điều kiện được kiểm tra lại trên mọi dòng thoả SeekPredicates mà không dùng index~\cite{msshowplan}. Bảng~\ref{tab:mssql-operators} tóm tắt các toán tử vật lý thường gặp theo mô tả của Microsoft, cùng khái niệm tương ứng trong phần cơ sở lý thuyết.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{8.6cm} >{\raggedright\arraybackslash}p{3.6cm}}
+    \caption{Các toán tử thường gặp trong kế hoạch thực thi của SQL Server (theo \cite{msshowplan})}
+    \label{tab:mssql-operators} \\
+    \toprule
+    \textbf{Toán tử} & \textbf{Ý nghĩa} & \textbf{Khái niệm lý thuyết} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Toán tử} & \textbf{Ý nghĩa} & \textbf{Khái niệm lý thuyết} \\
+    \midrule
+    \endhead
+    Table Scan & Đọc mọi dòng của một bảng không có clustered index (heap). & Quét tuần tự \\
+    Clustered Index Scan & Quét toàn bộ clustered index, tức toàn bộ bảng; nếu có Predicate thì chỉ trả các dòng thoả điều kiện. & Quét tuần tự \\
+    Index Scan & Đọc mọi dòng của một index phụ (nonclustered). & Quét tuần tự trên index \\
+    Clustered Index Seek / Index Seek & Dùng khả năng tìm kiếm của index để lấy các dòng thoả SeekPredicates; có thể kiểm tra thêm Predicate mà không dùng index. & Phép chọn dùng index \\
+    Key Lookup / RID Lookup & Tra ngược vào bảng (theo khoá clustered, hoặc theo mã dòng nếu là heap) để lấy các cột index phụ không có; luôn đi kèm Nested Loops. & Đọc phần còn lại của dòng sau khi dùng index \\
+    \midrule
+    Nested Loops & Với mỗi dòng của đầu vào ngoài (phía trên), chạy đầu vào trong (phía dưới) một lần. & (Indexed) nested loop join \\
+    Merge Join & Ghép hai đầu vào đã được sắp theo cột kết nối, có thể chèn thêm bước Sort để có thứ tự. & Merge join \\
+    Hash Match & Dựng bảng băm từ đầu vào build, rồi với mỗi dòng của đầu vào probe tính giá trị băm và tìm dòng khớp; cũng dùng để gom nhóm và loại trùng. & Hash join; gom nhóm dựa trên băm \\
+    Adaptive Join & Hoãn việc chọn hash join hay nested loops cho tới khi đã đọc xong đầu vào thứ nhất. & Chọn thuật toán kết nối lúc chạy \\
+    \midrule
+    Stream Aggregate & Gom nhóm các dòng và tính các hàm tổng hợp; yêu cầu đầu vào đã được sắp theo các cột nhóm. & Gom nhóm dựa trên sắp xếp \\
+    Sort & Sắp xếp toàn bộ các dòng đi vào. & Sắp xếp \\
+    Top & Chỉ trả về một số (hoặc tỉ lệ) dòng đầu tiên của đầu vào. & Lấy $N$ dòng đầu, dừng sớm \\
+    \midrule
+    Filter & Chỉ trả về các dòng thoả biểu thức lọc. & Phép chọn \\
+    Compute Scalar & Tính một biểu thức để tạo ra giá trị mới. & Phép chiếu, biểu thức \\
+    Table Spool & Lưu bản sao các dòng vào một bảng tạm trong \texttt{tempdb}, chỉ tồn tại trong lúc truy vấn chạy, để dùng lại. & Lưu kết quả trung gian \\
+    Segment & Chia các dòng thành từng đoạn theo giá trị của một hoặc nhiều cột. & Chia nhóm (dùng khi khử tương quan) \\
+    Parallelism & Phân phối, gom hoặc chia lại các luồng dữ liệu khi truy vấn chạy song song. & Thực thi song song \\
+    \bottomrule
+\end{longtable}
 
 \subsubsection{Cơ chế xử lý lệnh trên Redis}
-% TODO
+
+\paragraph{Kiến trúc tổng quan.}
+Redis là một \textit{máy chủ cấu trúc dữ liệu} (data structure server): cơ sở dữ liệu lưu dữ liệu trong bộ nhớ (RAM), có thể ghi xuống đĩa để lưu bền vững; dữ liệu được phục vụ từ bộ nhớ, còn đĩa chỉ dùng để lưu trữ~\cite{redisdocs}. Mỗi đối tượng dữ liệu có một \textit{khoá} (key) duy nhất; đối tượng gắn với khoá là \textit{giá trị} (value), và hai thứ tạo thành một cặp khoá--giá trị. Redis dùng phép băm để lấy giá trị ứng với một khoá một cách hiệu quả~\cite{redisdocs}.
+
+Redis hoạt động theo mô hình client--server (Hình~\ref{fig:redis-arch}): client mở kết nối TCP tới máy chủ Redis (mặc định cổng 6379) và giao tiếp bằng giao thức \textit{RESP} (Redis Serialization Protocol)~\cite{redisdocs}. Redis không có bộ phận chọn cách thực hiện như Query Optimizer của SQL Server: mỗi lệnh được thực thi trực tiếp trên các cấu trúc dữ liệu trong bộ nhớ.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[>=latex, thick,
+        box/.style={draw, rounded corners, align=center, minimum width=6.2cm, minimum height=2.6cm},
+        small/.style={draw, align=center, minimum width=3.2cm, minimum height=0.8cm}]
+        \node[small] (c1) at (-2.2, 0) {Client 1};
+        \node[small] (c2) at (2.2, 0) {Client 2};
+        \node[box, fill=gray!10] (srv) at (0, -3.0) {\textbf{Máy chủ Redis}\\[2pt]Nhận lệnh, thực thi tuần tự từng lệnh\\[4pt]Không gian khoá trong RAM:\\khoá $\rightarrow$ String, Hash, List, Set, Sorted Set\ldots};
+        \node[small, dashed] (disk) at (0, -6.0) {Đĩa (lưu bền vững, tuỳ chọn)};
+        \draw[<->] (c1) -- node[left, font=\small] {RESP / TCP} (srv);
+        \draw[<->] (c2) -- (srv);
+        \draw[->, dashed] (srv) -- (disk);
+    \end{tikzpicture}
+    \caption{Kiến trúc tổng quan của Redis (tổng hợp từ \cite{redisdocs})}
+    \label{fig:redis-arch}
+\end{figure}
+
+\paragraph{Quy trình xử lý một lệnh.}
+Giao thức của Redis là giao thức \textit{yêu cầu--phản hồi} (request--response): client gửi một lệnh dưới dạng một mảng các chuỗi (tên lệnh và các tham số), máy chủ xử lý lệnh rồi gửi kết quả về cho client~\cite{redisdocs}. Quá trình này gồm ba bước (Hình~\ref{fig:redis-flow}):
+\begin{enumerate}
+    \item \textbf{Nhận lệnh}: máy chủ đọc yêu cầu của client theo giao thức RESP, gồm tên lệnh và các tham số.
+    \item \textbf{Thực thi}: máy chủ chạy thuật toán cố định của lệnh đó trên cấu trúc dữ liệu được lưu tại khoá tương ứng trong bộ nhớ.
+    \item \textbf{Trả kết quả}: máy chủ gửi kết quả về cho client theo giao thức RESP.
+\end{enumerate}
+So với SQL Server, quy trình này \textit{không có} bước dịch sang đại số quan hệ, không có bộ tối ưu hoá và không có plan cache: cách thực hiện của mỗi lệnh đã được xác định sẵn bởi chính lệnh đó.
+
+Redis có thiết kế \textit{chủ yếu đơn luồng}: mọi yêu cầu được phục vụ bởi một luồng, mỗi thời điểm chỉ phục vụ một yêu cầu, nên các yêu cầu được xử lý tuần tự; một số thao tác chậm liên quan đến đĩa được đưa sang các luồng nền~\cite{redisdocs}. Hệ quả là khi một lệnh chạy chậm, mọi client khác phải chờ lệnh đó xong. Tài liệu Redis cảnh báo đặc biệt về các lệnh duyệt toàn bộ như \texttt{KEYS}, vốn chặn máy chủ cho tới khi trả về hết các khoá~\cite{redisdocs}.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[>=latex, thick,
+        proc/.style={draw, rounded corners, fill=gray!15, text width=6.2cm, minimum height=0.85cm, align=center},
+        io/.style={draw, text width=6.2cm, minimum height=0.8cm, align=center}]
+        \node[io]   (cmd)  at (0, 0)    {Lệnh từ client (RESP)};
+        \node[proc] (recv) at (0, -1.5) {Nhận lệnh: tên lệnh và tham số};
+        \node[proc] (exec) at (0, -3.0) {Chạy thuật toán của lệnh\\trên cấu trúc dữ liệu trong RAM};
+        \node[io]   (res)  at (0, -4.6) {Kết quả trả về client (RESP)};
+        \draw[->] (cmd) -- (recv);
+        \draw[->] (recv) -- (exec);
+        \draw[->] (exec) -- (res);
+        \node[font=\small, align=left, anchor=west] at (3.6, -2.25) {Các lệnh từ mọi client\\được thực thi lần lượt,\\từng lệnh một};
+    \end{tikzpicture}
+    \caption{Các bước xử lý một lệnh trên Redis (tổng hợp từ \cite{redisdocs})}
+    \label{fig:redis-flow}
+\end{figure}
+
+\paragraph{Kiểu dữ liệu và độ phức tạp của lệnh.}
+Giá trị trong Redis có thể là các cấu trúc dữ liệu khác nhau; các kiểu cơ bản gồm~\cite{redisdocs}:
+\begin{itemize}
+    \item \textbf{String}: kiểu cơ bản nhất, một dãy byte.
+    \item \textbf{Hash}: bản ghi gồm các cặp trường--giá trị.
+    \item \textbf{List}: danh sách các chuỗi theo thứ tự chèn vào.
+    \item \textbf{Set}: tập các chuỗi không trùng lặp, không có thứ tự.
+    \item \textbf{Sorted Set}: tập các chuỗi không trùng lặp, luôn được giữ theo thứ tự của một \textit{điểm số} (score) gắn với mỗi phần tử. Sorted Set được cài đặt bằng một skip list kết hợp với một bảng băm, nên mỗi lần thêm phần tử tốn $O(\log N)$, và khi đọc theo thứ tự thì dữ liệu đã được sắp sẵn.
+\end{itemize}
+
+Redis không ước lượng chi phí như SQL Server; thay vào đó, \textit{độ phức tạp thuật toán của mọi lệnh đều được ghi trong tài liệu}~\cite{redisdocs}. Bảng~\ref{tab:redis-complexity} liệt kê một số lệnh tiêu biểu. Người lập trình biết trước chi phí của mỗi lệnh và chọn lệnh, cấu trúc dữ liệu phù hợp; đây là vai trò mà bộ tối ưu hoá đảm nhận trong hệ quản trị quan hệ.
+
+\begin{table}[H]
+    \centering
+    \caption{Độ phức tạp của một số lệnh Redis (theo \cite{redisdocs})}
+    \label{tab:redis-complexity}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.4cm} X}
+        \toprule
+        \textbf{Lệnh} & \textbf{Kiểu dữ liệu} & \textbf{Độ phức tạp} \\
+        \midrule
+        \texttt{GET} & String & $O(1)$ \\
+        \texttt{HGET} & Hash & $O(1)$ \\
+        \texttt{HGETALL} & Hash & $O(N)$, $N$ là kích thước của hash \\
+        \texttt{ZADD} & Sorted Set & $O(\log N)$ cho mỗi phần tử thêm vào, $N$ là số phần tử của tập \\
+        \texttt{ZRANGE} & Sorted Set & $O(\log N + M)$, $N$ là số phần tử của tập, $M$ là số phần tử trả về \\
+        \texttt{SCAN} & Mọi khoá & $O(1)$ cho mỗi lần gọi; $O(N)$ để duyệt hết, $N$ là số phần tử \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\paragraph{Đường truy cập do người lập trình thiết kế.}
+Về bản chất, Redis chỉ cung cấp truy cập theo \textit{khoá chính}: muốn lấy một giá trị thì phải biết khoá của nó~\cite{redisdocs}. Các lệnh cốt lõi của Redis không có index phụ tự động, cũng không có phép kết nối hay gom nhóm như SQL; mọi ``đường truy cập'' khác phải do ứng dụng tự xây dựng bằng chính các cấu trúc dữ liệu của Redis:
+\begin{itemize}
+    \item \textbf{Index phụ thủ công}: dùng Sorted Set làm index cho các giá trị số (thêm bằng \texttt{ZADD}, truy vấn theo khoảng bằng \texttt{ZRANGE} với tham số \texttt{BYSCORE}), hoặc dùng Set, List cho các kiểu index khác~\cite{redisdocs}. Ứng dụng phải tự cập nhật các index này mỗi khi dữ liệu thay đổi; tài liệu Redis lưu ý đây là chủ đề phức tạp, và các ứng dụng cần truy vấn phức tạp nên cân nhắc dùng cơ sở dữ liệu quan hệ~\cite{redisdocs}.
+    \item \textbf{Chuẩn bị dữ liệu sẵn lúc ghi}: vì không có phép kết nối hay gom nhóm, các thông tin cần đọc cùng nhau thường được lưu trùng, và các giá trị tổng hợp được ứng dụng tính và cập nhật sẵn khi ghi, thay vì tính lúc đọc.
+    \item \textbf{Gom nhiều lệnh}: \textit{pipelining} cho phép client gửi nhiều lệnh cùng lúc rồi mới nhận các kết quả, giảm số lượt đi--về qua mạng~\cite{redisdocs}. \textit{Script Lua} (lệnh \texttt{EVAL}) chạy một chuỗi lệnh ngay trên máy chủ, gần dữ liệu (\textit{data locality}), giúp giảm lưu lượng mạng; Redis đảm bảo script được thực thi nguyên khối (atomic), và trong lúc script chạy, các client khác bị chặn~\cite{redisdocs}.
+\end{itemize}
+Ngoài ra, mô-đun \textit{Redis Search} (có trong Redis Stack) bổ sung khả năng đánh index và truy vấn trên các khoá Hash hoặc JSON bằng các lệnh \texttt{FT.CREATE}, \texttt{FT.SEARCH}, \texttt{FT.AGGREGATE}~\cite{redisdocs}. Tuy nhiên, với các lệnh cốt lõi của Redis, cách trả lời mỗi câu hỏi vẫn là chuỗi lệnh do người lập trình chọn từ trước, tương ứng với \textit{kế hoạch thực thi} mà bộ tối ưu hoá của SQL Server tự tạo ra.
 
 \subsubsection{Thiết kế kịch bản thực nghiệm}
-% TODO
+
+\paragraph{Mục tiêu thực nghiệm.}
+Thực nghiệm dùng các truy vấn thật của ứng dụng Novelle để trả lời hai câu hỏi: (1) với mỗi loại truy vấn, SQL Server chọn kế hoạch thực thi nào, ước lượng số dòng có đúng không, và kế hoạch có thay đổi khi dữ liệu tăng không; (2) Redis cần những bước lệnh nào để trả lời cùng câu hỏi. Năm truy vấn được chọn ứng với năm loại truy vấn mà ứng dụng phải hỗ trợ: một điều kiện, nhiều điều kiện, kết nối, truy vấn con và hàm tổng hợp. Các index được giữ nguyên như trong thiết kế cơ sở dữ liệu của ứng dụng; index chỉ là điều kiện có sẵn, không phải đối tượng so sánh.
+
+\paragraph{Môi trường.}
+Môi trường thực nghiệm được tóm tắt trong Bảng~\ref{tab:qp-env}. Toàn bộ quá trình tạo dữ liệu, chạy truy vấn, đo đạc và ghi kết quả được tự động hoá bằng công cụ lab viết bằng Python của nhóm.
+
+\begin{table}[H]
+    \centering
+    \caption{Môi trường thực nghiệm}
+    \label{tab:qp-env}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} X X}
+        \toprule
+        & \textbf{SQL Server} & \textbf{Redis} \\
+        \midrule
+        Phiên bản & SQL Server 2019 Express (15.0.4490.9) & Redis Stack 7.4.2 \\
+        Nơi chạy & AWS RDS, db.t3.micro (2 vCPU, khoảng 1 GB RAM), dùng chung cho cả nhóm & Docker trên máy cá nhân \\
+        Dữ liệu & Bản sao của các bảng trong cơ sở dữ liệu \texttt{NovelleDB} & Nạp từ chính các bản sao đó \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\paragraph{Dữ liệu.}
+Cơ sở dữ liệu của ứng dụng hiện có 150 truyện; bảng \texttt{Story} chỉ chiếm 13 trang, quá nhỏ để bộ tối ưu hoá phải cân nhắc giữa các kế hoạch. Vì vậy thực nghiệm tạo các bản sao dữ liệu ở ba mức \textbf{150, 1.000 và 10.000 truyện}:
+\begin{itemize}
+    \item 150 truyện thật được nhân bản; mỗi bản sao giữ nguyên các giá trị của truyện gốc (trạng thái, rating, số chương, thể loại, lượt xem theo ngày), chỉ đổi mã truyện, tên, slug và \textbf{tác giả}: mỗi bản sao thuộc về một nhóm tác giả mới, mô phỏng việc trang web lớn lên nhờ có thêm tác giả, nên mỗi tác giả vẫn có khoảng 4 truyện ở mọi mức.
+    \item Bảng \texttt{Genre} (20 thể loại) không nhân bản.
+    \item Các bản sao có đúng các index của thiết kế cơ sở dữ liệu; dữ liệu gốc không bị thay đổi.
+    \item Redis được nạp từ chính các bản sao này, nên hai hệ quản trị làm việc trên cùng một bộ dữ liệu.
+\end{itemize}
+Số dòng của các bảng ở từng mức được cho trong Bảng~\ref{tab:qp-data}. Mức lớn nhất dừng ở 10.000 truyện vì máy chủ RDS db.t3.micro chỉ còn khoảng 6,6~MB bộ nhớ cho các phép sắp xếp và băm: khi thử tạo dữ liệu ở mức 100.000 truyện, câu lệnh phải chờ cấp bộ nhớ (\texttt{RESOURCE\_SEMAPHORE}) và làm các phiên khác trên máy chủ dùng chung phải chờ theo.
+
+\begin{table}[H]
+    \centering
+    \caption{Số dòng của các bảng ở ba mức dữ liệu}
+    \label{tab:qp-data}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedleft\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{2.6cm} X}
+        \toprule
+        \textbf{Bảng} & \textbf{150 truyện} & \textbf{1.000 truyện} & \textbf{10.000 truyện} & \textbf{Ghi chú} \\
+        \midrule
+        \texttt{Story} & 150 & 1.000 & 10.000 & 13 / 75 / 736 trang \\
+        \texttt{Author} & 30 & 210 & 2.010 & \\
+        \texttt{StoryGenre} & 285 & 1.904 & 19.004 & Mỗi truyện 1--3 thể loại \\
+        \texttt{Genre} & 20 & 20 & 20 & Không nhân bản \\
+        \texttt{StoryViewDaily} & 11.979 & 79.933 & 798.673 & Một dòng cho mỗi truyện, mỗi ngày \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\paragraph{Các kịch bản truy vấn.}
+Mỗi kịch bản gồm câu SQL chạy trên SQL Server và chuỗi lệnh tương đương trên Redis. Mỗi câu SQL được chạy ở cả ba mức dữ liệu.
+
+\textbf{Truy vấn 1 -- Một điều kiện} (trang tác giả): lấy các truyện của một tác giả, truyện mới cập nhật đứng trước. Tác giả được chọn là tác giả có số truyện ở mức trung vị (4 truyện). Index liên quan: \texttt{IX\_Story\_Author (AuthorId)}.
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT StoryId, Title, Slug, CompletionStatus, ChapterCount, RatingAvg, LastChapterAt
+FROM Story
+WHERE AuthorId = ?
+ORDER BY LastChapterAt DESC
+\end{minted}
+Redis: mỗi tác giả có một Sorted Set chứa mã các truyện, điểm số là thời điểm cập nhật; mỗi truyện là một Hash. Các bước: \texttt{ZREVRANGE} lấy mã truyện theo thứ tự mới nhất, rồi \texttt{HMGET} thông tin từng truyện.
+
+\textbf{Truy vấn 2 -- Nhiều điều kiện} (tìm kiếm và lọc truyện): truyện công khai, đã hoàn thành, rating từ 4 trở lên, từ 20 chương trở lên, xếp theo rating, lấy trang đầu 20 truyện. Index liên quan: chỉ \texttt{IX\_Story\_RatingAvg (RatingAvg DESC)}; các cột \texttt{CompletionStatus}, \texttt{ChapterCount}, \texttt{PublishStatus} không có index. Ba tham số lần lượt là \texttt{'COMPLETED'}, 4 và 20.
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT StoryId, Title, Slug, RatingAvg, ChapterCount
+FROM Story
+WHERE PublishStatus = 'PUBLISHED' AND IsDeleted = 0
+  AND CompletionStatus = ? AND RatingAvg >= ? AND ChapterCount >= ?
+ORDER BY RatingAvg DESC
+OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+\end{minted}
+Redis: một Sorted Set chứa mọi truyện, điểm số là rating. Các bước: \texttt{ZREVRANGEBYSCORE} lấy từng lô 50 mã truyện có rating từ 4 trở lên theo thứ tự giảm dần, \texttt{HMGET} từng truyện, kiểm tra các điều kiện còn lại trong script, dừng khi đủ 20 truyện.
+
+\textbf{Truy vấn 3 -- Kết nối} (trang thể loại): các truyện công khai của một thể loại kèm bút danh tác giả, mới cập nhật trước, trang đầu 20 truyện; kết nối 4 bảng. Thể loại được chọn là thể loại có nhiều truyện nhất (Tiên hiệp). Index liên quan: \texttt{UQ\_Genre\_Slug}, \texttt{IX\_StoryGenre\_Genre (GenreId, StoryId)} và khoá chính của \texttt{Story}, \texttt{Author}.
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Title, s.Slug, s.LastChapterAt, a.PenName, g.Name AS GenreName
+FROM Genre g
+JOIN StoryGenre sg ON sg.GenreId = g.GenreId
+JOIN Story s       ON s.StoryId = sg.StoryId
+JOIN Author a      ON a.UserId = s.AuthorId
+WHERE g.Slug = ? AND s.PublishStatus = 'PUBLISHED' AND s.IsDeleted = 0
+ORDER BY s.LastChapterAt DESC
+OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+\end{minted}
+Redis: mỗi thể loại có một Sorted Set chứa các truyện công khai, điểm số là thời điểm cập nhật; mỗi truyện và mỗi tác giả là một Hash. Các bước: \texttt{ZREVRANGE} lấy 20 mã truyện mới nhất, \texttt{HGET} tên thể loại, rồi với mỗi truyện \texttt{HMGET} thông tin truyện và \texttt{HGET} bút danh tác giả.
+
+\textbf{Truy vấn 4 -- Truy vấn con} (truyện nổi bật): truyện công khai có rating cao hơn rating trung bình các truyện của cùng tác giả, xếp theo rating, trang đầu 20 truyện. Index liên quan: \texttt{IX\_Story\_Author (AuthorId)}, \texttt{IX\_Story\_RatingAvg (RatingAvg DESC)}.
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT s.StoryId, s.Title, s.Slug, s.AuthorId, s.RatingAvg
+FROM Story s
+WHERE s.PublishStatus = 'PUBLISHED' AND s.IsDeleted = 0
+  AND s.RatingAvg > (SELECT AVG(s2.RatingAvg)
+                     FROM Story s2
+                     WHERE s2.AuthorId = s.AuthorId
+                       AND s2.PublishStatus = 'PUBLISHED' AND s2.IsDeleted = 0)
+ORDER BY s.RatingAvg DESC
+OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+\end{minted}
+Redis: Sorted Set theo rating như truy vấn 2; ngoài ra mỗi tác giả có một Hash lưu sẵn tổng rating và số truyện công khai, do ứng dụng cập nhật mỗi khi rating thay đổi. Các bước: lấy từng lô 50 mã truyện theo rating giảm dần, \texttt{HMGET} từng truyện và \texttt{HMGET} tổng rating của tác giả, giữ truyện nếu rating lớn hơn trung bình của tác giả, dừng khi đủ 20 truyện.
+
+\textbf{Truy vấn 5 -- Hàm tổng hợp} (thống kê của quản trị viên): với mỗi ngày trong 30 ngày gần nhất, tổng lượt xem, số truyện được xem và lượt xem cao nhất của một truyện. Index liên quan: \texttt{IX\_StoryViewDaily\_Date (ViewDate) INCLUDE (Views)}.
+\begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
+SELECT v.ViewDate,
+       SUM(v.Views) AS TotalViews,
+       COUNT(*)     AS StoriesViewed,
+       MAX(v.Views) AS MaxViewsOneStory
+FROM StoryViewDaily v
+WHERE v.ViewDate >= ? AND v.ViewDate < ?
+GROUP BY v.ViewDate
+ORDER BY v.ViewDate
+\end{minted}
+Redis: mỗi ngày có một Hash lưu sẵn ba giá trị tổng hợp (tổng lượt xem, số truyện được xem, lượt xem cao nhất), do ứng dụng cộng dồn khi ghi lượt xem. Các bước: 30 lệnh \texttt{HMGET}, mỗi lệnh đọc ba giá trị của một ngày.
+
+\paragraph{Phương pháp đo.}
+Các đại lượng được đo và cách đo trên mỗi hệ quản trị được tóm tắt trong Bảng~\ref{tab:qp-measure}. Chỉ thời gian xử lý phía máy chủ được đo, không tính thời gian truyền qua mạng, để hai hệ quản trị có thể đặt cạnh nhau. Mỗi phép đo thời gian được lặp 10 lần (sau 3 lần chạy khởi động) và lấy giá trị trung vị (p50).
+
+\begin{table}[H]
+    \centering
+    \caption{Các đại lượng được đo và cách đo}
+    \label{tab:qp-measure}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} X X}
+        \toprule
+        \textbf{Đại lượng} & \textbf{SQL Server} & \textbf{Redis} \\
+        \midrule
+        Cách thực hiện & Câu SQL được chạy nhiều lần trong một batch; kết quả được gán vào biến thay vì trả về client, để máy chủ không phải chờ gửi dữ liệu qua mạng & Các bước lệnh được viết trong một script Lua chạy trên máy chủ, chỉ trả về số dòng tìm được \\
+        \addlinespace
+        Thời gian xử lý & Đo bằng \texttt{SYSDATETIME()} trước và sau vòng lặp, chia cho số lần lặp & Tổng thời gian thực thi các lệnh ghi trong \texttt{SLOWLOG} \\
+        \addlinespace
+        Cách xử lý truy vấn & Kế hoạch thực thi thực tế (\texttt{SET STATISTICS XML}): các toán tử, điều kiện tra index và điều kiện kiểm tra lại & Các lệnh đã chạy và số lệnh \\
+        \addlinespace
+        Lượng dữ liệu đọc & Số trang đọc (\texttt{SET STATISTICS IO}, logical reads) & Số truyện phải xem để tìm đủ kết quả \\
+        \addlinespace
+        Độ chính xác của ước lượng & Số dòng ước lượng so với số dòng thực tế & Không áp dụng (không có ước lượng) \\
+        \addlinespace
+        Tính đúng đắn & Số dòng trả về khớp với số dòng đếm trực tiếp trên dữ liệu & Số dòng trả về khớp với kết quả của SQL Server \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Vì SQL Server chạy trên RDS còn Redis chạy trên máy cá nhân, thời gian tuyệt đối của hai hệ quản trị chỉ mang tính tham khảo; trọng tâm so sánh là \textit{cách xử lý} (kế hoạch thực thi và các bước lệnh) và \textit{cách chúng thay đổi} khi dữ liệu tăng.
+
+\subsubsection{So sánh và đánh giá}
+
+\paragraph{Kết quả từng truy vấn.}
+Các bảng dưới đây ghi kết quả ở ba mức dữ liệu; thời gian là trung vị (p50) của 10 lần đo, tính bằng mili giây. Số trang đọc và số dòng ước lượng, thực tế lấy từ kế hoạch thực thi thực tế; chúng không đổi giữa các lần chạy, còn thời gian dao động nhẹ.
+
+\textbf{Truy vấn 1 -- Một điều kiện.} Tác giả được chọn có 4 truyện ở mọi mức.
+
+\begin{table}[H]
+    \centering
+    \caption{Kết quả truy vấn 1 (một điều kiện)}
+    \label{tab:qp-res-q1}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm} X >{\centering\arraybackslash}p{1.9cm} >{\centering\arraybackslash}p{1.3cm} >{\centering\arraybackslash}p{1.6cm} >{\centering\arraybackslash}p{1.4cm}}
+        \toprule
+        \textbf{Số truyện} & \textbf{Kế hoạch SQL Server} & \textbf{Dự đoán / thực tế} & \textbf{Trang đọc} & \textbf{SQL Server (ms)} & \textbf{Redis (ms)} \\
+        \midrule
+        150 & Clustered Index Scan $\rightarrow$ Sort & 4 / 4 & 13 & 0,21 & 0,07 \\
+        1.000 & Index Seek \texttt{IX\_Story\_Author} $\rightarrow$ Key Lookup $\rightarrow$ Sort & 4 / 4 & 10 & 0,10 & 0,05 \\
+        10.000 & Như trên & 3,7 / 4 & 14 & 0,11 & 0,04 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[>=latex, thick,
+        op/.style={draw, rounded corners, fill=gray!10, align=center, minimum width=3.4cm, minimum height=1.0cm, font=\small}]
+        \node[font=\small\bfseries, anchor=west] at (-1.9, 0.9) {(a) 150 truyện};
+        \node[op] (s1)  at (0, 0)   {Sort};
+        \node[op] (sc1) at (4.6, 0) {Clustered Index Scan\\(Story)};
+        \draw[->] (sc1) -- node[above, font=\scriptsize] {4 dòng} (s1);
+        \node[font=\small\bfseries, anchor=west] at (-1.9, -1.6) {(b) 1.000 và 10.000 truyện};
+        \node[op] (s2)  at (0, -2.5)   {Sort};
+        \node[op] (nl)  at (4.6, -2.5) {Nested Loops};
+        \node[op] (sk)  at (9.2, -2.5) {Index Seek\\(IX\_Story\_Author)};
+        \node[op] (kl)  at (9.2, -4.0) {Key Lookup\\(Story)};
+        \draw[->] (nl) -- node[above, font=\scriptsize] {4 dòng} (s2);
+        \draw[->] (sk) -- node[above, font=\scriptsize] {4 dòng} (nl);
+        \draw[->] (kl.west) -| (nl.south);
+    \end{tikzpicture}
+    \caption{Hai kế hoạch thực thi SQL Server chọn cho truy vấn 1; dữ liệu đi từ phải sang trái}
+    \label{fig:qp-res-q1-plans}
+\end{figure}
+
+Cùng một câu SQL, SQL Server đổi kế hoạch khi dữ liệu tăng (Hình~\ref{fig:qp-res-q1-plans}). Ở 150 truyện, cả bảng chỉ có 13 trang nên quét toàn bộ rẻ hơn tra index rồi lookup từng truyện. Từ 1.000 truyện, bảng có 75 trang trở lên trong khi chỉ cần 4 truyện, nên tra index \texttt{IX\_Story\_Author} rồi dùng Key Lookup lấy các cột còn lại (khoảng 10--14 trang) rẻ hơn; điều này đúng với phân tích chi phí của phép chọn ở phần cơ sở lý thuyết. Bước Sort xuất hiện vì các truyện tìm được không nằm sẵn theo thứ tự \texttt{LastChapterAt}. Số dòng ước lượng gần như khớp thực tế ở cả ba mức. Redis luôn dùng 5 lệnh (1 \texttt{ZREVRANGE} và 4 \texttt{HMGET}), không cần sắp xếp vì thứ tự được Sorted Set giữ sẵn từ lúc ghi.
+
+\textbf{Truy vấn 2 -- Nhiều điều kiện.} Số truyện thoả cả năm điều kiện lần lượt là 24, 161 và 1.601; kết quả lấy 20 truyện đầu.
+
+\begin{table}[H]
+    \centering
+    \caption{Kết quả truy vấn 2 (nhiều điều kiện)}
+    \label{tab:qp-res-q2}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm} X >{\centering\arraybackslash}p{1.9cm} >{\centering\arraybackslash}p{1.3cm} >{\centering\arraybackslash}p{1.6cm} >{\centering\arraybackslash}p{1.4cm}}
+        \toprule
+        \textbf{Số truyện} & \textbf{Kế hoạch SQL Server} & \textbf{Số dòng đã xem} & \textbf{Trang đọc} & \textbf{SQL Server (ms)} & \textbf{Redis (ms)} \\
+        \midrule
+        150 & Clustered Index Scan $\rightarrow$ Sort (lấy 20) & 150 & 13 & 0,61 & 0,38 \\
+        1.000 & Như trên & 1.000 & 75 & 2,81 & 0,30 \\
+        10.000 & Index Seek \texttt{IX\_Story\_RatingAvg} $\rightarrow$ Key Lookup $\rightarrow$ Top & 77 & 246 & 0,58 & 0,30 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Trong năm điều kiện, chỉ cột \texttt{RatingAvg} có index, nên chỉ điều kiện \texttt{RatingAvg >= 4} có thể là điều kiện tra index (SeekPredicates); các điều kiện còn lại luôn là điều kiện kiểm tra lại trên từng dòng (Predicate). Ở 150 và 1.000 truyện, SQL Server quét cả bảng, kiểm tra năm điều kiện rồi sắp xếp. Ở 10.000 truyện, nó đi theo index rating từ cao xuống, kiểm tra từng truyện và dừng khi đủ 20 truyện (toán tử Top), nên chỉ phải xem 77 dòng thay vì 10.000; nhờ đó truy vấn ở 10.000 truyện còn nhanh hơn ở 1.000 truyện. Trong kế hoạch còn xuất hiện \texttt{CONVERT\_IMPLICIT} trên cột \texttt{CompletionStatus}: cột có kiểu \texttt{VARCHAR} nhưng tham số được driver gửi dưới dạng \texttt{NVARCHAR}, nên SQL Server phải đổi kiểu cột trước khi so sánh. Redis làm theo đúng cách mà SQL Server chọn ở mức 10.000 (đi theo Sorted Set rating và kiểm tra từng truyện), nhưng cách này do người lập trình viết sẵn và không đổi theo dữ liệu: cần 66--94 lệnh tuỳ mức.
+
+\textbf{Truy vấn 3 -- Kết nối.} Thể loại được chọn có 19, 129 và 1.269 truyện công khai ở ba mức.
+
+\begin{table}[H]
+    \centering
+    \caption{Kết quả truy vấn 3 (kết nối): thuật toán SQL Server chọn cho từng phép kết nối}
+    \label{tab:qp-res-q3}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm} X X X >{\centering\arraybackslash}p{1.1cm} >{\centering\arraybackslash}p{1.4cm} >{\centering\arraybackslash}p{1.2cm}}
+        \toprule
+        \textbf{Số truyện} & \textbf{Genre $\bowtie$ StoryGenre} & \textbf{$\ldots \bowtie$ Story} & \textbf{$\ldots \bowtie$ Author} & \textbf{Trang đọc} & \textbf{SQL Server (ms)} & \textbf{Redis (ms)} \\
+        \midrule
+        150 & Nested Loops & Nested Loops (19 lần tra) & Nested Loops (19 lần tra) & 81 & 0,33 & 0,11 \\
+        1.000 & Nested Loops & Nested Loops (129 lần tra) & Nested Loops (20 lần tra) & 321 & 1,10 & 0,14 \\
+        10.000 & Nested Loops & \textbf{Hash Match} (đọc cả bảng Story) & Nested Loops (20 lần tra) & 784 & 20,63 & 0,15 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Thuật toán được chọn riêng cho từng phép kết nối, theo số dòng đi vào phép kết nối đó. Khi ghép với bảng \texttt{Story}, Nested Loops tra bảng một lần cho mỗi truyện của thể loại, nên chi phí tăng theo số truyện; Hash Match đọc cả bảng một lượt, chi phí tăng theo kích thước bảng cộng một phần chuẩn bị cố định (xin bộ nhớ, dựng bảng băm). Với 19 hay 129 truyện, tra từng truyện vẫn rẻ hơn; với 1.269 truyện, tra từng truyện tốn khoảng 2.500 lần đọc trang rời rạc, trong khi đọc cả bảng chỉ 736 trang, nên SQL Server chuyển sang Hash Match, đúng với so sánh trong Bảng~\ref{tab:join-algorithms}. Hai phép kết nối còn lại luôn dùng Nested Loops: phép thứ nhất chỉ có một dòng vào (một thể loại), còn bảng \texttt{Author} được ghép \textit{sau} khi đã sắp xếp và lấy 20 truyện, nên chỉ còn 20 lần tra; SQL Server tự sắp xếp lại thứ tự công việc để giảm số dòng phải ghép. Redis không có phép kết nối: ứng dụng tự ghép bằng 42 lệnh (lấy 20 truyện mới nhất của thể loại, rồi đọc từng truyện và bút danh từng tác giả), không phụ thuộc tổng số truyện.
+
+\textbf{Truy vấn 4 -- Truy vấn con.} Số tác giả có truyện công khai là 27, 188 và 1.808; số truyện có rating cao hơn trung bình của tác giả là 68, 453 và 4.533.
+
+\begin{table}[H]
+    \centering
+    \caption{Kết quả truy vấn 4 (truy vấn con tương quan)}
+    \label{tab:qp-res-q4}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm} X >{\centering\arraybackslash}p{2.0cm} >{\centering\arraybackslash}p{1.3cm} >{\centering\arraybackslash}p{1.6cm} >{\centering\arraybackslash}p{1.4cm}}
+        \toprule
+        \textbf{Số truyện} & \textbf{Cách SQL Server thực thi} & \textbf{Số lần tính trung bình} & \textbf{Trang đọc$^{*}$} & \textbf{SQL Server (ms)} & \textbf{Redis (ms)} \\
+        \midrule
+        150 & Sort theo tác giả $\rightarrow$ Segment, Table Spool, Stream Aggregate cho từng nhóm tác giả $\rightarrow$ Sort theo rating & 28 & 378 & 1,75 & 0,29 \\
+        1.000 & Như trên & 189 & 2.538 & 11,77 & 0,23 \\
+        10.000 & Hash Match Aggregate tính trung bình mọi tác giả $\rightarrow$ Table Spool $\rightarrow$ đi theo \texttt{IX\_Story\_RatingAvg}, Key Lookup, Top & 1 & 4.648 & 37,80 & 0,30 \\
+        \bottomrule
+        \multicolumn{6}{l}{\footnotesize $^{*}$ Gồm cả trang của bảng tạm Table Spool.}
+    \end{tabularx}
+\end{table}
+
+Ở cả ba mức, SQL Server \textit{khử tương quan}: thay vì tính lại trung bình cho từng truyện, mỗi tác giả chỉ được tính trung bình một lần. Cách thực hiện thay đổi theo kích thước dữ liệu. Ở mức nhỏ, nó sắp xếp cả bảng theo tác giả rồi xử lý lần lượt từng nhóm (Stream Aggregate chạy một lần cho mỗi nhóm). Ở 10.000 truyện, sắp xếp cả bảng trở nên tốn kém, nên SQL Server tính trung bình của mọi tác giả trong một lượt bằng bảng băm, rồi đi theo index rating từ cao xuống và dừng khi đủ 20 truyện, nhờ đó không phải sắp xếp kết quả. Redis không tính được trung bình theo nhóm: ứng dụng lưu sẵn tổng rating và số truyện của mỗi tác giả, cập nhật khi rating thay đổi; lúc đọc chỉ cần khoảng 41 lệnh. Đây là truy vấn có chênh lệch thời gian lớn nhất giữa hai hệ quản trị, vì phần việc nặng của Redis đã được làm từ lúc ghi.
+
+\textbf{Truy vấn 5 -- Hàm tổng hợp.} Số dòng lượt xem nằm trong 30 ngày là 4.050, 27.030 và 270.030; kết quả gồm 30 dòng (30 ngày).
+
+\begin{table}[H]
+    \centering
+    \caption{Kết quả truy vấn 5 (hàm tổng hợp)}
+    \label{tab:qp-res-q5}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm} X >{\centering\arraybackslash}p{1.9cm} >{\centering\arraybackslash}p{1.3cm} >{\centering\arraybackslash}p{1.6cm} >{\centering\arraybackslash}p{1.4cm}}
+        \toprule
+        \textbf{Số truyện} & \textbf{Kế hoạch SQL Server} & \textbf{Dòng phải đọc} & \textbf{Trang đọc} & \textbf{SQL Server (ms)} & \textbf{Redis (ms)} \\
+        \midrule
+        150 & Index Seek \texttt{IX\_StoryViewDaily\_Date} $\rightarrow$ Stream Aggregate & 4.050 & 18 & 2,20 & 0,12 \\
+        1.000 & Như trên & 27.030 & 67 & 13,54 & 0,12 \\
+        10.000 & Như trên & 270.030 & 582 & 127,64 & 0,13 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Kế hoạch không đổi ở cả ba mức. Index \texttt{IX\_StoryViewDaily\_Date} đã xếp sẵn các dòng theo ngày và chứa luôn cột \texttt{Views}, nên SQL Server chỉ cần tra đúng khoảng 30 ngày, đọc ra các dòng theo thứ tự ngày và cộng dồn từng ngày (Stream Aggregate), không cần sắp xếp và không cần bộ nhớ cho bảng băm; đây là cách rẻ nhất ở mọi kích thước. Tuy vậy, để tính tổng thì mọi dòng trong khoảng vẫn phải được đọc, nên khi số dòng tăng gần 67 lần, thời gian cũng tăng tương ứng. Redis không có \texttt{GROUP BY}: ứng dụng cộng dồn sẵn ba giá trị của mỗi ngày lúc ghi, nên lúc đọc chỉ cần 30 lệnh và thời gian không phụ thuộc số dòng lượt xem.
+
+\textbf{Thời gian theo kích thước dữ liệu.} Hình~\ref{fig:qp-time} đặt thời gian của năm truy vấn trên hai hệ quản trị cạnh nhau (thang logarit). Với SQL Server, thời gian của truy vấn kết nối, truy vấn con và truy vấn tổng hợp tăng theo dữ liệu, còn truy vấn 1 và 2 giữ ở mức thấp nhờ kế hoạch chuyển sang dùng index. Với Redis, cả năm đường gần như nằm ngang dưới 0,4~ms.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{loglogaxis}[
+            width=0.47\textwidth, height=6.2cm, title={SQL Server},
+            xlabel={Số truyện}, ylabel={Thời gian (ms)},
+            xmin=110, xmax=14000, ymin=0.03, ymax=300,
+            xtick={150,1000,10000}, xticklabels={150,1.000,10.000}, scaled x ticks=false,
+            ytick={0.1,1,10,100}, yticklabels={{0,1},1,10,100},
+            cycle list={{blue,mark=*},{red,mark=square*},{brown!80!black,mark=triangle*},{black,mark=star},{teal,mark=diamond*}},
+            grid=major, grid style={gray!25}, mark size=2pt, thick]
+            \addplot coordinates {(150,0.21) (1000,0.10) (10000,0.11)};
+            \addplot coordinates {(150,0.61) (1000,2.81) (10000,0.58)};
+            \addplot coordinates {(150,0.33) (1000,1.10) (10000,20.63)};
+            \addplot coordinates {(150,1.75) (1000,11.77) (10000,37.80)};
+            \addplot coordinates {(150,2.20) (1000,13.54) (10000,127.64)};
+        \end{loglogaxis}
+    \end{tikzpicture}
+    \hfill
+    \begin{tikzpicture}
+        \begin{loglogaxis}[
+            width=0.47\textwidth, height=6.2cm, title={Redis},
+            xlabel={Số truyện},
+            xmin=110, xmax=14000, ymin=0.03, ymax=300,
+            xtick={150,1000,10000}, xticklabels={150,1.000,10.000}, scaled x ticks=false,
+            ytick={0.1,1,10,100}, yticklabels={{0,1},1,10,100},
+            cycle list={{blue,mark=*},{red,mark=square*},{brown!80!black,mark=triangle*},{black,mark=star},{teal,mark=diamond*}},
+            grid=major, grid style={gray!25}, mark size=2pt, thick,
+            legend style={font=\scriptsize}, legend pos=north east, legend cell align=left]
+            \addplot coordinates {(150,0.07) (1000,0.05) (10000,0.04)};
+            \addplot coordinates {(150,0.38) (1000,0.30) (10000,0.30)};
+            \addplot coordinates {(150,0.11) (1000,0.14) (10000,0.15)};
+            \addplot coordinates {(150,0.29) (1000,0.23) (10000,0.30)};
+            \addplot coordinates {(150,0.12) (1000,0.12) (10000,0.13)};
+            \legend{TV1: một điều kiện, TV2: nhiều điều kiện, TV3: kết nối, TV4: truy vấn con, TV5: tổng hợp}
+        \end{loglogaxis}
+    \end{tikzpicture}
+    \caption{Thời gian xử lý phía máy chủ (p50) theo kích thước dữ liệu, thang logarit ở cả hai trục}
+    \label{fig:qp-time}
+\end{figure}
+
+\paragraph{So sánh tổng hợp.}
+Bảng~\ref{tab:qp-compare} đặt hai hệ quản trị cạnh nhau theo các tiêu chí rút ra từ năm truy vấn.
+
+\begin{table}[H]
+    \centering
+    \caption{So sánh cách xử lý truy vấn của SQL Server và Redis}
+    \label{tab:qp-compare}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X X}
+        \toprule
+        \textbf{Tiêu chí} & \textbf{SQL Server} & \textbf{Redis} \\
+        \midrule
+        Ai quyết định cách xử lý & Query Optimizer, dựa trên thống kê và các index có sẵn & Người lập trình, từ lúc thiết kế cấu trúc dữ liệu \\
+        \addlinespace
+        Khi dữ liệu thay đổi & Tự đổi kế hoạch (4/5 truy vấn đổi kế hoạch khi dữ liệu tăng) & Các bước lệnh không đổi \\
+        \addlinespace
+        Thời gian đọc khi dữ liệu tăng & Tăng ở các truy vấn phải đọc nhiều dòng (kết nối, truy vấn con, tổng hợp: tới khoảng 20--130~ms ở 10.000 truyện) & Gần như không đổi, dưới 0,4~ms \\
+        \addlinespace
+        Độ chính xác ước lượng & Số dòng ước lượng gần đúng thực tế ở mọi truy vấn & Không có ước lượng \\
+        \addlinespace
+        Kết nối, truy vấn con, gom nhóm & Có sẵn; Optimizer tự viết lại và chọn thuật toán & Không có; ứng dụng tự ghép dữ liệu hoặc tính sẵn \\
+        \addlinespace
+        Công sức khi có câu hỏi mới & Viết câu SQL mới & Thêm cấu trúc dữ liệu mới và code cập nhật nó mỗi khi ghi \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Tóm lại, SQL Server \textit{làm việc lúc đọc}: người viết chỉ mô tả dữ liệu cần lấy, Optimizer tự chọn và tự điều chỉnh cách lấy theo dữ liệu, nhưng các truy vấn phải xử lý nhiều dòng sẽ chậm dần khi dữ liệu tăng. Redis \textit{làm việc lúc ghi}: mọi việc nặng (giữ thứ tự, ghép dữ liệu, tính tổng hợp) được chuẩn bị sẵn khi dữ liệu thay đổi, nên đọc luôn nhanh và ổn định, nhưng chỉ trả lời được những câu hỏi đã được thiết kế trước.
+
+\paragraph{Kết luận cho Novelle.}
+Từ kết quả trên, nhóm chọn \textbf{SQL Server làm nơi lưu trữ chính} và xử lý các truy vấn linh hoạt, nhiều điều kiện, nhiều bảng: tìm kiếm và lọc truyện, trang thể loại, thống kê của quản trị viên. \textbf{Redis được dùng làm lớp đọc nhanh} cho các câu hỏi cố định, được gọi rất nhiều và có thể chuẩn bị sẵn: danh sách truyện của tác giả hoặc thể loại theo thứ tự cập nhật, bộ đếm lượt xem, các số liệu tổng hợp theo ngày. Các cấu trúc trong Redis được ứng dụng cập nhật mỗi khi dữ liệu trong SQL Server thay đổi.
+
+\paragraph{Hạn chế.}
+\begin{itemize}
+    \item Dữ liệu ở mức 1.000 và 10.000 truyện được nhân bản từ 150 truyện thật, nên phân bố giá trị đều hơn dữ liệu thực tế; điều này có thể làm thống kê ước lượng dễ đúng hơn.
+    \item Mức dữ liệu lớn nhất chỉ là 10.000 truyện do giới hạn bộ nhớ của máy chủ RDS db.t3.micro; ở mức này, một phần dữ liệu có thể phải đọc từ đĩa, làm thời gian dao động giữa các lần chạy.
+    \item SQL Server chạy trên RDS còn Redis chạy trên máy cá nhân, nên thời gian tuyệt đối của hai hệ quản trị chỉ mang tính tham khảo.
+    \item Các số đo dưới 1~ms của Redis dao động giữa các lần chạy; chênh lệch nhỏ giữa các mức không có ý nghĩa.
+    \item Chi phí ghi của Redis (cập nhật Sorted Set, tổng rating, tổng theo ngày) chưa được đo trong thực nghiệm này.
+\end{itemize}
