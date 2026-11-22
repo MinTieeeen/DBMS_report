@@ -1,14 +1,94 @@
 \section{Kết luận và đánh giá}
 \label{sec:conclusion}
 
+Chương cuối cùng tổng kết những gì nhóm đã thực hiện trong bài tập lớn, đặt lại hai hệ quản trị cạnh nhau dựa trên kết quả thực nghiệm của Chương~\ref{sec:dbms-topics}, đánh giá mức độ hoàn thành so với mục tiêu đặt ra ở Chương~\ref{sec:introduction}, và chỉ ra những hạn chế còn tồn tại của đề tài.
+
 \subsection{Tổng kết kết quả thực hiện}
-% TODO
+\label{subsec:conclusion-summary}
+
+Bài tập lớn được thực hiện theo hai hướng gắn liền với nhau: nghiên cứu cơ chế bên trong của hai hệ quản trị, và vận dụng kết quả nghiên cứu vào việc xây dựng ứng dụng Novelle. Những kết quả chính mà nhóm đạt được có thể tóm tắt như sau.
+
+\paragraph{Về phía nghiên cứu.} Nhóm đã tìm hiểu tổng quan về Microsoft SQL Server và Redis (Chương~\ref{sec:dbms-overview}), sau đó đi sâu vào năm chủ đề kỹ thuật: quản lý và lưu trữ dữ liệu, cấu trúc chỉ mục, xử lý truy vấn, xử lý giao tác, sao lưu và phục hồi dữ liệu (Chương~\ref{sec:dbms-topics}). Với mỗi chủ đề, nhóm trình bày cơ sở lý thuyết, phân tích cách mỗi hệ quản trị hiện thực vấn đề, rồi thiết kế các kịch bản thực nghiệm tương đương và chạy trên cùng một bộ dữ liệu của Novelle, gồm SQL Server 2019 trên Amazon RDS và Redis Stack 7.4. Các kịch bản không chỉ đo thời gian mà còn quan sát trực tiếp hành vi bên trong của hệ quản trị, chẳng hạn số trang LOB và độ phân mảnh chỉ mục, kế hoạch thực thi mà bộ tối ưu chọn ở từng kích thước dữ liệu, số deadlock khi tải tăng, số key bị trục xuất khi đầy bộ nhớ hay lượng dữ liệu được nạp lại sau sự cố. Nhờ vậy, mỗi nhận định so sánh trong báo cáo đều được giải thích bằng cơ chế và được kiểm chứng bằng số liệu.
+
+\paragraph{Về phía ứng dụng.} Nhóm đã phân tích yêu cầu và xác định 13 nhóm yêu cầu chức năng cho bốn nhóm người dùng: khách, người đọc, tác giả và quản trị viên (Chương~\ref{sec:app-db-design}). Từ đó, nhóm xây dựng sơ đồ ERD, ánh xạ sang lược đồ quan hệ gồm 18 bảng trên SQL Server với đầy đủ khoá chính, khoá ngoại, ràng buộc duy nhất, chỉ mục, view, trigger và thủ tục lưu trữ; đồng thời thiết kế cách tổ chức dữ liệu trên Redis gồm quy ước đặt tên key, cấu trúc dữ liệu và thời gian sống cho sáu nhóm dữ liệu là bộ nhớ đệm, bộ đếm lượt xem, bản nháp, phiên đăng nhập, giới hạn tần suất và khoá phân tán. Ứng dụng được hiện thực theo kiến trúc nhiều tầng với frontend React và backend Spring Boot, tổ chức thành các module Nền tảng, Tài khoản, Danh mục \& truyện, Đọc truyện, Thư viện \& đánh giá, Yêu cầu tác giả, Studio sáng tác và Quản trị (Chương~\ref{sec:architecture-implementation}).
+
+\paragraph{Mối liên hệ giữa nghiên cứu và ứng dụng.} Điểm nhóm đánh giá cao nhất ở đề tài là cách phân chia vai trò giữa hai hệ quản trị trong Novelle được rút ra từ kết quả thực nghiệm chứ không chọn theo cảm tính. Kết quả về lưu trữ cho thấy tự động lưu trên Redis nhanh hơn khoảng 250 lần, nên bản nháp được đặt trên Redis và chỉ ghi xuống SQL Server khi tác giả bấm Lưu. Kết quả về xử lý truy vấn và chỉ mục cho thấy SQL Server trả lời được mọi câu hỏi và tìm kiếm toàn văn tiếng Việt chính xác, nên tìm kiếm, lọc nhiều điều kiện và thống kê được giao cho SQL Server; còn các câu hỏi cố định được gọi rất nhiều như trang chủ, chi tiết truyện, nội dung chương được lưu đệm trên Redis. Kết quả về giao tác và sao lưu cho thấy SQL Server không mất giao tác đã commit và rollback đầy đủ khi có lỗi, nên mọi nghiệp vụ nhiều bước như duyệt tác giả, tạo chương hay đánh giá đều chạy trong giao tác trên SQL Server; còn bộ đếm lượt xem được tăng nguyên tử bằng script Lua trên Redis và đồng bộ dồn xuống SQL Server mỗi 60 giây, vì mất một phần nhỏ lượt xem khi có sự cố là chấp nhận được.
 
 \subsection{Đánh giá và so sánh hai DBMS}
-% TODO
+\label{subsec:conclusion-comparison}
+
+Ở Chương~\ref{sec:dbms-overview}, nhóm đã đưa ra so sánh ban đầu rằng SQL Server ưu tiên tính toàn vẹn còn Redis ưu tiên tốc độ. Sau năm chủ đề nghiên cứu, nhận định này không chỉ được xác nhận mà còn được làm rõ hơn ở cấp độ cơ chế. Bảng~\ref{tab:conclusion-compare} tổng hợp kết quả chính của từng chủ đề.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Chủ đề} & \textbf{MS SQL Server} & \textbf{Redis} \\ \hline
+Lưu trữ và quản lý dữ liệu & Dữ liệu nằm trên đĩa, RAM chỉ giữ bản sao của trang; khi vùng đệm quá nhỏ vẫn không mất dòng nào, nhưng đọc một chương mất khoảng 6,7~ms. & Dữ liệu nằm trên RAM, đọc một chương khoảng 0,002~ms, nhập hàng loạt nhanh hơn khoảng 18 lần; khi đầy bộ nhớ phải từ chối ghi hoặc trục xuất key. \\ \hline
+Cấu trúc chỉ mục & Nhiều loại chỉ mục (clustered, nonclustered, covering, filtered, full-text), tự cập nhật trong giao tác; tìm toàn văn tiếng Việt đúng 100\%. & Chỉ có sẵn truy cập theo tên key; chỉ mục phụ phải tự xây và tự đồng bộ, hoặc dùng RediSearch nhưng không xử lý tốt tiếng Việt có dấu. \\ \hline
+Xử lý truy vấn & Optimizer tự chọn và tự đổi kế hoạch theo dữ liệu (4/5 truy vấn đổi kế hoạch); truy vấn kết nối, truy vấn con, tổng hợp tăng tới khoảng 20--130~ms ở 10.000 truyện. & Không có kết nối, truy vấn con hay gom nhóm; ứng dụng chuẩn bị sẵn kết quả lúc ghi nên mọi truy vấn đều dưới 0,4~ms và không đổi theo dữ liệu. \\ \hline
+Xử lý giao tác & Rollback đầy đủ, có ràng buộc làm lớp bảo vệ cuối cùng; nhưng thiết kế khoá sai gây deadlock (hơn 400 deadlock với trigger tính lại điểm). & Không có rollback và ràng buộc; đơn luồng nên không có deadlock, script Lua không xung đột; \texttt{WATCH} giảm mạnh khi tranh chấp cao. \\ \hline
+Sao lưu và phục hồi & Không mất giao tác đã commit; giao tác chưa commit được rollback khi sự cố; khôi phục theo thời điểm nhờ log backup của RDS và temporal table. & Nạp lại đủ dữ liệu từ AOF sau khi khởi động lại; có thể mất khoảng một giây dữ liệu với \texttt{everysec}; AOF/RDB nằm cùng máy, không bảo vệ khi mất máy. \\ \hline
+\end{tabularx}
+\caption{Tổng hợp kết quả so sánh SQL Server và Redis qua năm chủ đề}
+\label{tab:conclusion-compare}
+\end{table}
+
+Từ bảng tổng hợp, nhóm rút ra ba nhận xét chung.
+
+\begin{itemize}
+    \item \textbf{Hai hệ quản trị đặt công việc ở hai thời điểm khác nhau.} SQL Server \emph{làm việc lúc đọc}: người viết chỉ mô tả dữ liệu cần lấy, hệ quản trị tự tìm cách lấy và tự điều chỉnh khi dữ liệu thay đổi. Redis \emph{làm việc lúc ghi}: thứ tự, dữ liệu ghép và số liệu tổng hợp được chuẩn bị sẵn khi dữ liệu thay đổi, nên đọc luôn nhanh nhưng chỉ trả lời được những câu hỏi đã được thiết kế trước.
+    \item \textbf{Trách nhiệm giữ dữ liệu đúng nằm ở hai nơi khác nhau.} Với SQL Server, phần lớn việc này do hệ quản trị đảm nhận thông qua ràng buộc, khoá, nhật ký giao tác và sao lưu. Với Redis, việc này chuyển sang ứng dụng: người lập trình phải tự duy trì chỉ mục phụ, tự gộp các lệnh vào script Lua và tự chọn chính sách trục xuất, cấu hình lưu bền phù hợp với từng loại dữ liệu.
+    \item \textbf{Hai hệ quản trị bổ sung cho nhau chứ không thay thế nhau.} SQL Server phù hợp làm \textbf{nguồn dữ liệu gốc} cho dữ liệu nghiệp vụ nhiều quan hệ, cần truy vấn linh hoạt và cần đúng tuyệt đối. Redis phù hợp làm \textbf{lớp phục vụ nhanh} đứng phía trước, cho dữ liệu được truy cập thường xuyên, có dạng truy cập cố định và có thể tạo lại từ SQL Server hoặc chấp nhận mất một phần.
+\end{itemize}
+
+Bên cạnh đó, các thực nghiệm cũng cho thấy một hệ quản trị mạnh không tự động bảo đảm ứng dụng chạy tốt. Ở SQL Server, cùng là giao tác đúng nhưng trigger tính lại toàn bộ điểm đánh giá khiến thông lượng giảm xuống dưới 1 lượt mỗi giây ở 10 client, trong khi cách cộng dồn đạt khoảng 216 lượt mỗi giây ở 100 client mà không có deadlock nào. Ở Redis, cùng một giới hạn bộ nhớ nhưng đổi chính sách từ \texttt{noeviction} sang \texttt{allkeys-lru} làm tỷ lệ đọc trúng bộ nhớ đệm tăng từ khoảng 47\% lên khoảng 82\%, đổi lại 87,3\% lượt xem bị mất nếu bộ đếm đặt chung với bộ nhớ đệm. Nói cách khác, hiểu cơ chế bên trong của hệ quản trị là điều kiện cần để sử dụng nó đúng cách.
 
 \subsection{Đánh giá mức độ hoàn thành đề tài}
-% TODO
+\label{subsec:conclusion-completion}
+
+Bảng~\ref{tab:conclusion-completion} đối chiếu các mục tiêu đặt ra ở Chương~\ref{sec:introduction} với kết quả thực tế mà nhóm đạt được.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{4.2cm}|>{\raggedright\arraybackslash}X|>{\centering\arraybackslash}p{2.2cm}|}
+\hline
+\textbf{Mục tiêu} & \textbf{Kết quả đạt được} & \textbf{Mức độ} \\ \hline
+Tìm hiểu tổng quan về SQL Server và Redis & Trình bày nguồn gốc, đặc điểm, lĩnh vực ứng dụng và so sánh tổng quan hai hệ quản trị (Chương~\ref{sec:dbms-overview}). & Hoàn thành \\ \hline
+Nghiên cứu năm chủ đề kỹ thuật & Cả năm chủ đề đều có cơ sở lý thuyết, cơ chế trên từng hệ quản trị, kịch bản thực nghiệm tương đương, so sánh và kết luận cho Novelle (Chương~\ref{sec:dbms-topics}). & Hoàn thành \\ \hline
+Kiểm chứng bằng thực nghiệm & Các kịch bản được chạy trên dữ liệu của Novelle ở nhiều mức kích thước; kết quả được ghi lại bằng số liệu, kế hoạch thực thi và biểu đồ. Một số phép đo còn giới hạn do môi trường (Mục~\ref{subsec:conclusion-limitations}). & Hoàn thành phần lớn \\ \hline
+Phân tích yêu cầu và thiết kế cơ sở dữ liệu & 13 nhóm yêu cầu chức năng; ERD, lược đồ quan hệ 18 bảng trên SQL Server; thiết kế key, cấu trúc dữ liệu và thời gian sống trên Redis (Chương~\ref{sec:app-db-design}). & Hoàn thành \\ \hline
+Xây dựng ứng dụng Novelle & Hiện thực đủ các module cho bốn nhóm người dùng, từ đọc truyện, thư viện, đánh giá, sáng tác chương đến duyệt tác giả và quản trị hệ thống (Chương~\ref{sec:architecture-implementation}). & Hoàn thành \\ \hline
+Kết hợp hai hệ quản trị dựa trên kết quả nghiên cứu & SQL Server là nguồn dữ liệu gốc; Redis đảm nhận bộ nhớ đệm, bộ đếm lượt xem, bản nháp, phiên đăng nhập, giới hạn tần suất và khoá phân tán; mỗi lựa chọn đều được giải thích bằng kết quả thực nghiệm. & Hoàn thành \\ \hline
+\end{tabularx}
+\caption{Đánh giá mức độ hoàn thành các mục tiêu của đề tài}
+\label{tab:conclusion-completion}
+\end{table}
+
+Nhìn chung, nhóm đã hoàn thành các mục tiêu chính của đề tài. Phần nghiên cứu không dừng lại ở việc liệt kê tính năng mà giải thích được \emph{vì sao} mỗi hệ quản trị hành xử như vậy và kiểm chứng bằng thực nghiệm; phần ứng dụng không chỉ dùng hai hệ quản trị cùng lúc mà phân chia vai trò cho từng loại dữ liệu dựa trên chính các kết quả đó. Thông qua đề tài, các thành viên cũng hiểu rõ hơn những khái niệm đã học trong môn Hệ quản trị cơ sở dữ liệu như tổ chức trang và vùng đệm, cây B\textsuperscript{+}, bộ tối ưu dựa trên chi phí, các thuật toán kết nối, khoá hai pha, deadlock và nhật ký giao tác, khi quan sát chúng hoạt động trên một hệ quản trị thực tế.
 
 \subsection{Hạn chế của đề tài}
-% TODO
+\label{subsec:conclusion-limitations}
+
+Bên cạnh những kết quả đạt được, đề tài vẫn còn một số hạn chế, chủ yếu đến từ môi trường thực nghiệm và thời gian thực hiện.
+
+\paragraph{Về môi trường và phạm vi thực nghiệm.}
+\begin{itemize}
+    \item \textbf{Phần cứng không tương đương:} SQL Server chạy trên Amazon RDS còn Redis chạy trên máy cá nhân, nên thời gian tuyệt đối và tỷ lệ tốc độ giữa hai hệ quản trị chỉ mang tính tham khảo; điều có giá trị hơn là xu hướng thay đổi theo kích thước dữ liệu và hành vi bên trong của từng hệ.
+    \item \textbf{Quy mô dữ liệu còn nhỏ:} do giới hạn bộ nhớ của máy chủ RDS \texttt{db.t3.micro}, mức dữ liệu lớn nhất chỉ là 10.000 truyện. Dữ liệu ở mức 1.000 và 10.000 truyện được nhân bản từ 150 truyện thật nên phân bố giá trị đều hơn thực tế, có thể làm thống kê ước lượng của SQL Server dễ đúng hơn.
+    \item \textbf{Một số phép đo chưa đầy đủ:} chi phí ghi của Redis khi phải cập nhật các cấu trúc dữ liệu chuẩn bị sẵn (Sorted Set, tổng rating, tổng theo ngày) chưa được đo; các số đo dưới 1~ms của Redis còn dao động giữa các lần chạy.
+    \item \textbf{Chưa mô phỏng được sự cố thật:} nhóm không có quyền thực hiện native backup và phục hồi toàn instance trên RDS, nên RPO khi mất instance được suy ra từ lịch sử backup chứ không đo bằng một lần khôi phục thật. Phía Redis, lệnh \texttt{SHUTDOWN NOSAVE} vẫn xả AOF trước khi tắt nên chưa mô phỏng được tình huống mất điện.
+\end{itemize}
+
+\paragraph{Về ứng dụng.}
+\begin{itemize}
+    \item \textbf{Một số đề xuất từ nghiên cứu chưa được áp dụng hết:} trigger \texttt{trg\_Rating} vẫn tính lại toàn bộ điểm đánh giá thay vì cộng dồn, nên có nguy cơ deadlock khi nhiều người cùng đánh giá một truyện như kết quả ở Mục~\ref{subsubsec:tx-compare}.
+    \item \textbf{Cấu hình Redis còn đơn giản:} hệ thống dùng một instance Redis cho mọi nhóm dữ liệu, trong khi thực nghiệm cho thấy bộ nhớ đệm và bộ đếm lượt xem nên được tách riêng hoặc dùng chính sách trục xuất chỉ áp dụng cho key có TTL. Ngoài ra, AOF và RDB nằm trên cùng máy với Redis nên chưa có bản sao lưu ở nơi khác.
+    \item \textbf{Phạm vi chức năng có giới hạn:} ứng dụng tập trung vào các luồng cốt lõi của một nền tảng truyện; các tính năng như thanh toán, quảng cáo, thông báo thời gian thực hay gợi ý truyện theo sở thích chưa nằm trong phạm vi đề tài. Hệ thống cũng chưa được kiểm thử tải ở quy mô nhiều người dùng thật.
+\end{itemize}
+
+\paragraph{Hướng phát triển.} Từ những hạn chế trên, nhóm đề xuất một số hướng phát triển tiếp theo: chạy lại các thực nghiệm trên cùng một môi trường phần cứng với dữ liệu lớn hơn và có phân bố gần với thực tế hơn; bổ sung phép đo chi phí ghi của Redis và thử nghiệm khôi phục toàn instance; áp dụng cách cộng dồn cho \texttt{trg\_Rating}; tách Redis thành các instance riêng cho bộ nhớ đệm và dữ liệu cần giữ lâu hơn, kết hợp sao chép AOF/RDB ra kho lưu trữ độc lập; và mở rộng ứng dụng với các tính năng như thông báo hay gợi ý truyện, trong đó có thể tận dụng thêm các cấu trúc dữ liệu của Redis như Pub/Sub hoặc Stream.
