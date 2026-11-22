@@ -5,12 +5,16 @@
 \subsection{Tổng quan ứng dụng}
 \label{subsec:app-overview}
 
+Chương này trình bày ứng dụng Novelle, bối cảnh nghiệp vụ được dùng xuyên suốt báo cáo. Nhóm lần lượt giới thiệu ứng dụng và các bên liên quan, liệt kê các yêu cầu chức năng, sau đó trình bày quá trình mô hình hoá dữ liệu và thiết kế dữ liệu trên từng hệ quản trị.
+
 \subsubsection{Giới thiệu ứng dụng}
 
-\textbf{Novelle} là một ứng dụng web cho phép người dùng đọc và sáng tác truyện dài kỳ trực tuyến. Nội dung truyện do chính người dùng viết và đăng tải theo từng chương. Ứng dụng được xây dựng theo mô hình client--server: phía client là một ứng dụng web chạy trên trình duyệt, phía server cung cấp REST API để xử lý nghiệp vụ và truy xuất dữ liệu.
+\textbf{Novelle} là một ứng dụng web cho phép người dùng đọc và sáng tác truyện dài kỳ trực tuyến. Điểm đặc biệt của Novelle là toàn bộ nội dung truyện do chính người dùng viết và đăng tải theo từng chương, nên mỗi người dùng vừa có thể là độc giả, vừa có thể trở thành tác giả. Về mặt kỹ thuật, ứng dụng được xây dựng theo mô hình client--server: phía client là một ứng dụng web chạy trên trình duyệt, còn phía server cung cấp REST API để xử lý nghiệp vụ và truy xuất dữ liệu.
 
 \subsubsection{Các bên liên quan chính}
 \label{subsubsec:stakeholders}
+
+Ứng dụng phục vụ bốn nhóm người dùng với quyền hạn tăng dần như sau:
 
 \begin{itemize}
     \item \textbf{Khách:} người truy cập chưa đăng nhập, có thể xem trang chủ, tìm kiếm, xem thông tin truyện, tác giả và đọc các chương đã đăng.
@@ -21,11 +25,13 @@
 
 \subsubsection{Mục tiêu và phạm vi ứng dụng}
 
-Ứng dụng hướng tới việc cung cấp đầy đủ các luồng chính của một nền tảng truyện trực tuyến, bao gồm: tìm và đọc truyện, quản lý thư viện cá nhân, sáng tác và phát hành chương, và quản trị nội dung. Phạm vi của ứng dụng giới hạn ở các chức năng cốt lõi này, trong đó ưu tiên các thao tác thêm, sửa, xoá và truy vấn dữ liệu được hiện thực đầy đủ.
+Mục tiêu của ứng dụng là cung cấp đầy đủ các luồng chính của một nền tảng truyện trực tuyến, bao gồm tìm và đọc truyện, quản lý thư viện cá nhân, sáng tác và phát hành chương, cũng như quản trị nội dung. Do thời gian thực hiện có hạn, nhóm giới hạn phạm vi ở các chức năng cốt lõi này và ưu tiên hiện thực đầy đủ các thao tác thêm, sửa, xoá và truy vấn dữ liệu; các tính năng như thanh toán hay quảng cáo không nằm trong phạm vi của đề tài.
 
 % ===================================================================
 \subsection{Yêu cầu chức năng của hệ thống}
 \label{subsec:functional-requirements}
+
+Dựa trên vai trò của từng nhóm người dùng, nhóm xác định các yêu cầu chức năng của hệ thống và chia chúng thành 13 nhóm theo luồng nghiệp vụ. Mỗi yêu cầu được gán một mã định danh (FR) để thuận tiện cho việc tham chiếu ở các chương sau; các bảng dưới đây lần lượt trình bày từng nhóm yêu cầu cùng tác nhân tương ứng.
 
 \subsubsection{Quản lý tài khoản}
 
@@ -233,7 +239,7 @@ FR-13.2 & Hệ thống phải hiển thị thống kê lượt xem theo thời g
 \subsubsection{Thiết kế sơ đồ thực thể - liên kết (ERD)}
 \label{subsubsec:erd}
 
-Từ các yêu cầu chức năng ở mục~\ref{subsec:functional-requirements}, dữ liệu của Novelle được tổ chức thành bốn nhóm chính:
+Từ các yêu cầu chức năng đã nêu ở mục~\ref{subsec:functional-requirements}, nhóm tiến hành xác định các thực thể và mối quan hệ cần lưu trữ. Nhìn chung, dữ liệu của Novelle có thể được tổ chức thành bốn nhóm chính như sau:
 
 \begin{itemize}
     \item \textbf{Người dùng và vai trò:} mỗi tài khoản (\texttt{USER}) có tên đăng nhập, email, thông tin hồ sơ, vai trò và trạng thái hoạt động. Tài khoản được chuyên biệt hoá thành hai lớp con rời nhau theo thuộc tính vai trò: \texttt{AUTHOR} mang thêm bút danh, phần giới thiệu và dấu xác minh; \texttt{ADMIN} không có thuộc tính riêng nhưng là bên duy nhất được duyệt các yêu cầu trở thành tác giả (\texttt{AUTHOR\_REQUEST}). Người đọc thông thường không thuộc lớp con nào.
@@ -242,7 +248,7 @@ Từ các yêu cầu chức năng ở mục~\ref{subsec:functional-requirements}
     \item \textbf{Thống kê lượt xem:} lượt xem của mỗi truyện được tổng hợp theo từng ngày (\texttt{STORY\_VIEW\_DAILY}) để phục vụ biểu đồ thống kê của tác giả và quản trị viên.
 \end{itemize}
 
-Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như số chương, số chữ, lượt xem, lượt theo dõi và điểm trung bình của truyện là \textbf{thuộc tính dẫn xuất}, vì có thể tính lại từ các thực thể và quan hệ liên quan. Sơ đồ ERD của hệ thống được trình bày ở Hình~\ref{fig:erd}
+Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như số chương, số chữ, lượt xem, lượt theo dõi và điểm trung bình của truyện là \textbf{thuộc tính dẫn xuất}, vì có thể tính lại từ các thực thể và quan hệ liên quan. Những thuộc tính này vẫn được thể hiện trên sơ đồ để phản ánh đúng yêu cầu nghiệp vụ, còn việc lưu sẵn hay tính lại chúng sẽ được quyết định ở bước thiết kế vật lý. Sơ đồ ERD hoàn chỉnh của hệ thống được trình bày ở Hình~\ref{fig:erd}.
 
 \begin{landscape}
 \begin{figure}[p]
@@ -256,7 +262,7 @@ Bên cạnh các thuộc tính lưu trực tiếp, một số thuộc tính như
 \subsubsection{Xây dựng lược đồ quan hệ (Relational Schema)}
 \label{subsubsec:relational-schema}
 
-Lược đồ quan hệ của hệ thống được ánh xạ từ sơ đồ ERD ở Hình~\ref{fig:erd} và được trình bày ở Hình~\ref{fig:relational-schema}.
+Sau khi hoàn thành sơ đồ ERD, nhóm ánh xạ các thực thể, thực thể yếu, mối quan hệ nhiều--nhiều và phân cấp chuyên biệt hoá sang mô hình quan hệ theo các bước ánh xạ chuẩn. Kết quả là lược đồ quan hệ được trình bày ở Hình~\ref{fig:relational-schema}.
 
 \begin{landscape}
 \begin{figure}[p]
@@ -274,13 +280,13 @@ Lược đồ quan hệ của hệ thống được ánh xạ từ sơ đồ ERD
 \subsubsection{Thiết kế các bảng và thuộc tính}
 \label{subsubsec:table-design}
 
-Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chia thành ba nhóm: người dùng, nội dung và hoạt động đọc. 
+Từ lược đồ quan hệ, nhóm hiện thực cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server với tổng cộng 18 bảng. Để dễ theo dõi, các bảng được chia thành ba nhóm là người dùng, nội dung và hoạt động đọc; với mỗi bảng, nhóm trình bày tên cột, kiểu dữ liệu, ràng buộc và ý nghĩa của từng cột.
 
 \paragraph{Nhóm người dùng}
+Nhóm đầu tiên gồm các bảng lưu thông tin tài khoản, hồ sơ tác giả và các mối quan hệ giữa người dùng với nhau.
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{[User]}:} lưu tài khoản người dùng; vai trò quản trị viên được xác định qua cột \texttt{Role}.
-\end{itemize}
+\textbf{Bảng \texttt{[User]}} dùng để lưu tài khoản người dùng; vai trò quản trị viên được xác định qua cột \texttt{Role}. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-user}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -311,9 +317,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{AuthorRequest}:} lưu các yêu cầu trở thành tác giả do người đọc gửi và kết quả xét duyệt.
-\end{itemize}
+\textbf{Bảng \texttt{AuthorRequest}} dùng để lưu các yêu cầu trở thành tác giả do người đọc gửi và kết quả xét duyệt. Cấu trúc cụ thể của bảng được trình bày trong Bảng~\ref{tab:db-author-request}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -338,9 +343,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Author}:} lưu hồ sơ tác giả; đây là lớp con của \texttt{[User]} và dùng chung khoá chính với bảng đó.
-\end{itemize}
+\textbf{Bảng \texttt{Author}} dùng để lưu hồ sơ tác giả; đây là lớp con của \texttt{[User]} và dùng chung khoá chính với bảng đó. Bảng~\ref{tab:db-author} liệt kê các thuộc tính cùng ràng buộc tương ứng.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -362,9 +366,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{AuthorFollow}:} lưu quan hệ người dùng theo dõi tác giả.
-\end{itemize}
+\textbf{Bảng \texttt{AuthorFollow}} dùng để lưu quan hệ người dùng theo dõi tác giả. Chi tiết về các cột của bảng này được thể hiện ở Bảng~\ref{tab:db-author-follow}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -384,10 +387,10 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 
 
 \paragraph{Nhóm nội dung}
+Nhóm thứ hai gồm các bảng lưu truyện, chương và các danh mục dùng để phân loại truyện.
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Genre}:} lưu danh mục thể loại truyện.
-\end{itemize}
+\textbf{Bảng \texttt{Genre}} dùng để lưu danh mục thể loại truyện. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-genre}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -407,9 +410,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Tag}:} lưu các thẻ do tác giả gắn cho truyện.
-\end{itemize}
+\textbf{Bảng \texttt{Tag}} dùng để lưu các thẻ do tác giả gắn cho truyện. Cấu trúc cụ thể của bảng được trình bày trong Bảng~\ref{tab:db-tag}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -428,9 +430,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Story}:} lưu thông tin truyện cùng các số liệu tổng hợp phục vụ hiển thị danh sách.
-\end{itemize}
+\textbf{Bảng \texttt{Story}} dùng để lưu thông tin truyện cùng các số liệu tổng hợp phục vụ hiển thị danh sách. Bảng~\ref{tab:db-story} liệt kê các thuộc tính cùng ràng buộc tương ứng.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -468,9 +469,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{StoryGenre}:} lưu quan hệ nhiều--nhiều giữa truyện và thể loại.
-\end{itemize}
+\textbf{Bảng \texttt{StoryGenre}} dùng để lưu quan hệ nhiều--nhiều giữa truyện và thể loại. Chi tiết về các cột của bảng này được thể hiện ở Bảng~\ref{tab:db-story-genre}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -488,9 +488,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{StoryTag}:} lưu quan hệ nhiều--nhiều giữa truyện và thẻ.
-\end{itemize}
+\textbf{Bảng \texttt{StoryTag}} dùng để lưu quan hệ nhiều--nhiều giữa truyện và thẻ. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-story-tag}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -507,9 +506,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Volume}:} lưu các tập của truyện (thực thể yếu của \texttt{Story}).
-\end{itemize}
+\textbf{Bảng \texttt{Volume}} dùng để lưu các tập của truyện (thực thể yếu của \texttt{Story}). Cấu trúc cụ thể của bảng được trình bày trong Bảng~\ref{tab:db-volume}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -529,9 +527,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Chapter}:} lưu nội dung và trạng thái phát hành của từng chương (thực thể yếu của \texttt{Story}).
-\end{itemize}
+\textbf{Bảng \texttt{Chapter}} dùng để lưu nội dung và trạng thái phát hành của từng chương (thực thể yếu của \texttt{Story}). Bảng~\ref{tab:db-chapter} liệt kê các thuộc tính cùng ràng buộc tương ứng.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -561,9 +558,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{ChapterRevision}:} lưu lịch sử các phiên bản cũ của chương; dữ liệu chỉ được thêm, không được sửa hay xoá.
-\end{itemize}
+\textbf{Bảng \texttt{ChapterRevision}} dùng để lưu lịch sử các phiên bản cũ của chương; dữ liệu chỉ được thêm, không được sửa hay xoá. Chi tiết về các cột của bảng này được thể hiện ở Bảng~\ref{tab:db-chapter-revision}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -588,10 +584,10 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 
 
 \paragraph{Nhóm hoạt động đọc}
+Nhóm cuối cùng gồm các bảng ghi nhận hoạt động của người đọc như lịch sử đọc, theo dõi, tủ truyện, đánh giá và lượt xem.
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{ReadingHistory}:} lưu vị trí đọc gần nhất của mỗi người dùng trong mỗi truyện.
-\end{itemize}
+\textbf{Bảng \texttt{ReadingHistory}} dùng để lưu vị trí đọc gần nhất của mỗi người dùng trong mỗi truyện. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-reading-history}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -611,9 +607,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Follow}:} lưu quan hệ người dùng theo dõi truyện.
-\end{itemize}
+\textbf{Bảng \texttt{Follow}} dùng để lưu quan hệ người dùng theo dõi truyện. Cấu trúc cụ thể của bảng được trình bày trong Bảng~\ref{tab:db-follow}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -631,9 +626,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{ReadingList}:} lưu các tủ truyện do người dùng tự tạo.
-\end{itemize}
+\textbf{Bảng \texttt{ReadingList}} dùng để lưu các tủ truyện do người dùng tự tạo. Bảng~\ref{tab:db-reading-list} liệt kê các thuộc tính cùng ràng buộc tương ứng.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -656,9 +650,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{ReadingListItem}:} lưu các truyện nằm trong mỗi tủ truyện.
-\end{itemize}
+\textbf{Bảng \texttt{ReadingListItem}} dùng để lưu các truyện nằm trong mỗi tủ truyện. Chi tiết về các cột của bảng này được thể hiện ở Bảng~\ref{tab:db-reading-list-item}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -678,9 +671,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{Rating}:} lưu đánh giá và nhận xét của người dùng cho truyện; mỗi người có tối đa một đánh giá cho mỗi truyện.
-\end{itemize}
+\textbf{Bảng \texttt{Rating}} dùng để lưu đánh giá và nhận xét của người dùng cho truyện; mỗi người có tối đa một đánh giá cho mỗi truyện. Các thuộc tính của bảng được mô tả chi tiết trong Bảng~\ref{tab:db-rating}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}
@@ -701,9 +693,8 @@ Cơ sở dữ liệu \texttt{NovelleDB} trên MS SQL Server gồm 18 bảng, chi
 \end{longtable}
 }
 
-\begin{itemize}
-    \item \textbf{Bảng \texttt{StoryViewDaily}:} lưu lượt xem của mỗi truyện theo từng ngày (thực thể yếu của \texttt{Story}).
-\end{itemize}
+\textbf{Bảng \texttt{StoryViewDaily}} dùng để lưu lượt xem của mỗi truyện theo từng ngày (thực thể yếu của \texttt{Story}). Cấu trúc cụ thể của bảng được trình bày trong Bảng~\ref{tab:db-story-view-daily}.
+
 
 {\small
 \renewcommand{\arraystretch}{1.2}

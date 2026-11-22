@@ -1,27 +1,26 @@
 \subsection{Cấu trúc chỉ mục (Indexing)}
 \label{subsec:indexing}
 
+Ở mục trước, nhóm đã tìm hiểu cách mỗi hệ quản trị tổ chức dữ liệu trên đĩa và trong bộ nhớ. Tuy nhiên, dữ liệu được lưu trữ tốt thôi là chưa đủ; điều quan trọng không kém là làm sao tìm ra đúng dữ liệu cần thiết một cách nhanh chóng. Đó chính là vai trò của chỉ mục. Mục này trình bày các loại chỉ mục cơ bản, cách SQL Server và Redis hiện thực chỉ mục, rồi kiểm chứng hiệu quả của chúng qua các truy vấn tiêu biểu của Novelle như tra cứu truyện, lọc nhiều điều kiện, phân trang và tìm kiếm toàn văn.
+
 \subsubsection{Cơ sở lý thuyết}
 \label{subsubsec:indexing-theory}
 
-Chỉ mục (\emph{index}) là cấu trúc dữ liệu phụ xây dựng trên một hoặc nhiều thuộc tính (\emph{khoá tìm kiếm}) để tìm các bản ghi thoả điều kiện mà không phải quét toàn bộ tệp dữ liệu~\cite{elmasri2016fundamentals,silberschatz2019database}. Các khái niệm chính:
+Chỉ mục (\emph{index}) là một cấu trúc dữ liệu phụ được xây dựng trên một hoặc nhiều thuộc tính, gọi là \emph{khoá tìm kiếm}, nhằm giúp hệ quản trị tìm ra các bản ghi thoả điều kiện mà không phải quét qua toàn bộ tệp dữ liệu. Có thể hình dung chỉ mục giống như mục lục ở cuối một cuốn sách: thay vì lật từng trang để tìm một thuật ngữ, người đọc chỉ cần tra mục lục để biết ngay thuật ngữ đó nằm ở trang nào.
 
-\begin{itemize}
-    \item \textbf{Chỉ mục chính / gom cụm / phụ:} chỉ mục chính và gom cụm gắn với thứ tự vật lý của tệp (mỗi tệp tối đa một), chỉ mục phụ xây trên thuộc tính bất kỳ (có thể có nhiều).
-    \item \textbf{Chỉ mục dày / thưa:} có một mục cho mỗi bản ghi, hoặc chỉ một mục cho mỗi khối dữ liệu.
-    \item \textbf{Chỉ mục kết hợp:} khoá gồm nhiều thuộc tính; thứ tự các thuộc tính quyết định điều kiện nào dùng được chỉ mục.
-    \item \textbf{Cây B\textsuperscript{+}:} cây cân bằng nhiều cấp, tìm kiếm $O(\log N)$, các nút lá liên kết theo thứ tự nên hỗ trợ tốt truy vấn theo khoảng và sắp xếp.
-    \item \textbf{Chỉ mục băm:} tìm theo điều kiện bằng với chi phí $O(1)$ nhưng không hỗ trợ truy vấn theo khoảng.
-    \item \textbf{Chỉ mục đảo:} ánh xạ từ $\rightarrow$ danh sách tài liệu chứa từ, dùng cho tìm kiếm toàn văn.
-\end{itemize}
+Dựa vào mối liên hệ với thứ tự vật lý của dữ liệu, chỉ mục được chia thành nhiều loại. \textbf{Chỉ mục chính} và \textbf{chỉ mục gom cụm} gắn liền với thứ tự sắp xếp vật lý của tệp, vì vậy mỗi tệp chỉ có tối đa một chỉ mục loại này. Ngược lại, \textbf{chỉ mục phụ} có thể được xây dựng trên bất kỳ thuộc tính nào và một tệp có thể có nhiều chỉ mục phụ. Bên cạnh đó, chỉ mục còn được phân biệt thành \textbf{chỉ mục dày}, có một mục cho mỗi bản ghi, và \textbf{chỉ mục thưa}, chỉ có một mục cho mỗi khối dữ liệu. Khi khoá tìm kiếm gồm nhiều thuộc tính, ta có \textbf{chỉ mục kết hợp}; với loại chỉ mục này, thứ tự của các thuộc tính sẽ quyết định những điều kiện truy vấn nào có thể tận dụng được chỉ mục.
 
-Chỉ mục giúp đọc nhanh hơn nhưng tốn thêm dung lượng và làm chậm thao tác ghi, vì mỗi lệnh \texttt{INSERT}, \texttt{UPDATE}, \texttt{DELETE} phải cập nhật cả chỉ mục.
+Về mặt cấu trúc, có ba dạng chỉ mục phổ biến. \textbf{Cây B\textsuperscript{+}} là cây cân bằng nhiều cấp, cho phép tìm kiếm với chi phí $O(\log N)$; do các nút lá được liên kết với nhau theo thứ tự, cây B\textsuperscript{+} hỗ trợ rất tốt các truy vấn theo khoảng và các truy vấn cần sắp xếp. \textbf{Chỉ mục băm} cho phép tìm kiếm theo điều kiện bằng với chi phí chỉ khoảng $O(1)$, nhưng lại không hỗ trợ truy vấn theo khoảng. Cuối cùng, \textbf{chỉ mục đảo} ánh xạ mỗi từ tới danh sách các tài liệu chứa từ đó, và thường được dùng cho chức năng tìm kiếm toàn văn.
+
+Tuy nhiên, chỉ mục không phải là miễn phí. Chỉ mục giúp việc đọc nhanh hơn, nhưng đồng thời cũng tốn thêm dung lượng lưu trữ và làm chậm các thao tác ghi, bởi vì mỗi lệnh \texttt{INSERT}, \texttt{UPDATE} hay \texttt{DELETE} đều phải cập nhật cả các chỉ mục liên quan. Vì vậy, việc thiết kế chỉ mục luôn là bài toán cân bằng giữa tốc độ đọc và chi phí ghi.
 
 % -------------------------------------------------------------------
 \subsubsection{Cơ chế chỉ mục trên MS SQL Server}
 \label{subsubsec:indexing-mssql}
 
-\paragraph{Tổ chức lưu trữ nền tảng.} SQL Server lưu dữ liệu trong các trang (\emph{page}) kích thước 8~KB, nhóm thành các extent gồm 8 trang liên tiếp. Chỉ mục \emph{rowstore} của SQL Server được tổ chức dưới dạng cây B\textsuperscript{+}: nút gốc và các nút trung gian chứa khoá dẫn đường, nút lá chứa dữ liệu chỉ mục; các trang ở cùng một cấp được liên kết đôi với nhau để duyệt xuôi hoặc ngược theo thứ tự khoá~\cite{mssqldocs}. Một bảng có thể được lưu ở một trong hai dạng:
+Với nền tảng lý thuyết trên, phần này tìm hiểu cách SQL Server tổ chức chỉ mục trên đĩa và các loại chỉ mục mà hệ quản trị này cung cấp.
+
+\paragraph{Tổ chức lưu trữ nền tảng.} SQL Server lưu dữ liệu trong các trang (\emph{page}) kích thước 8~KB, nhóm thành các extent gồm 8 trang liên tiếp. Chỉ mục \emph{rowstore} của SQL Server được tổ chức dưới dạng cây B\textsuperscript{+}: nút gốc và các nút trung gian chứa khoá dẫn đường, nút lá chứa dữ liệu chỉ mục; các trang ở cùng một cấp được liên kết đôi với nhau để duyệt xuôi hoặc ngược theo thứ tự khoá. Một bảng có thể được lưu ở một trong hai dạng:
 
 \begin{itemize}
     \item \textbf{Heap:} bảng không có chỉ mục gom cụm; các dòng không theo thứ tự nào và được định vị bằng \emph{RID} (mã tệp, mã trang, số khe trong trang).
@@ -54,9 +53,11 @@ Chỉ mục giúp đọc nhanh hơn nhưng tốn thêm dung lượng và làm ch
 \subsubsection{Cơ chế chỉ mục trên Redis}
 \label{subsubsec:indexing-redis}
 
-\paragraph{Chỉ mục chính: không gian khoá là một bảng băm.} Redis là kho key--value lưu toàn bộ dữ liệu trong bộ nhớ. Mỗi cơ sở dữ liệu logic của Redis là một từ điển (\emph{dict}) ánh xạ tên key tới giá trị, được hiện thực bằng bảng băm với kỹ thuật xử lý xung đột bằng danh sách liên kết~\cite{redisdocs}. Vì vậy, truy cập theo tên key luôn có chi phí trung bình $O(1)$ và có thể xem tên key là ``chỉ mục chính'' duy nhất mà Redis cung cấp sẵn. Khi bảng băm cần mở rộng hoặc thu nhỏ, Redis không băm lại toàn bộ cùng lúc mà thực hiện \emph{băm lại tăng dần} (\emph{incremental rehashing}): duy trì song song hai bảng và di chuyển dần từng bucket sang bảng mới qua mỗi thao tác, để không có thao tác nào bị chặn lâu.
+Trái ngược với sự đa dạng của SQL Server, Redis lõi hầu như không có khái niệm chỉ mục theo nghĩa truyền thống. Phần này giải thích vì sao lại như vậy và các cách mà người phát triển có thể dùng để xây dựng chỉ mục trên Redis.
 
-\paragraph{Không có chỉ mục phụ tự động.} Redis lõi không có khái niệm lược đồ, cột hay chỉ mục phụ. Muốn tìm các giá trị theo một trường không phải tên key (ví dụ ``các sản phẩm thuộc một danh mục có giá dưới 100''), có hai cách: duyệt toàn bộ không gian khoá bằng \texttt{SCAN} với chi phí $O(N)$, hoặc để ứng dụng \textbf{tự xây dựng và tự duy trì} cấu trúc chỉ mục bằng các kiểu dữ liệu sẵn có~\cite{carlson2013redis}. Mọi lệnh ghi dữ liệu gốc khi đó phải đi kèm lệnh cập nhật chỉ mục, thường được gộp trong \texttt{MULTI}/\texttt{EXEC} hoặc một script Lua để giữ tính nhất quán.
+\paragraph{Chỉ mục chính: không gian khoá là một bảng băm.} Redis là kho key--value lưu toàn bộ dữ liệu trong bộ nhớ. Mỗi cơ sở dữ liệu logic của Redis là một từ điển (\emph{dict}) ánh xạ tên key tới giá trị, được hiện thực bằng bảng băm với kỹ thuật xử lý xung đột bằng danh sách liên kết. Vì vậy, truy cập theo tên key luôn có chi phí trung bình $O(1)$ và có thể xem tên key là ``chỉ mục chính'' duy nhất mà Redis cung cấp sẵn. Khi bảng băm cần mở rộng hoặc thu nhỏ, Redis không băm lại toàn bộ cùng lúc mà thực hiện \emph{băm lại tăng dần} (\emph{incremental rehashing}): duy trì song song hai bảng và di chuyển dần từng bucket sang bảng mới qua mỗi thao tác, để không có thao tác nào bị chặn lâu.
+
+\paragraph{Không có chỉ mục phụ tự động.} Redis lõi không có khái niệm lược đồ, cột hay chỉ mục phụ. Muốn tìm các giá trị theo một trường không phải tên key (ví dụ ``các sản phẩm thuộc một danh mục có giá dưới 100''), có hai cách: duyệt toàn bộ không gian khoá bằng \texttt{SCAN} với chi phí $O(N)$, hoặc để ứng dụng \textbf{tự xây dựng và tự duy trì} cấu trúc chỉ mục bằng các kiểu dữ liệu sẵn có. Mọi lệnh ghi dữ liệu gốc khi đó phải đi kèm lệnh cập nhật chỉ mục, thường được gộp trong \texttt{MULTI}/\texttt{EXEC} hoặc một script Lua để giữ tính nhất quán.
 
 \paragraph{Chỉ mục phụ tự xây dựng bằng kiểu dữ liệu Redis.} Các mẫu chỉ mục phổ biến gồm:
 
@@ -75,7 +76,7 @@ ZADD by_price 45 42                           -- chỉ mục theo khoảng
 ZRANGE by_price 0 100 BYSCORE                 -- sản phẩm có giá <= 100
 \end{minted}
 
-\paragraph{Module RediSearch: chỉ mục phụ do Redis quản lý.} Redis Stack tích hợp module \textbf{RediSearch}, bổ sung khả năng đánh chỉ mục phụ tự động cho dữ liệu dạng Hash hoặc JSON~\cite{redisdocs}. Lệnh \texttt{FT.CREATE} khai báo một chỉ mục gồm tiền tố key cần theo dõi, một lược đồ các trường cùng loại chỉ mục, và tuỳ chọn một biểu thức lọc. Sau đó, mọi lệnh ghi lên các Hash có tiền tố tương ứng đều được module tự động cập nhật vào chỉ mục, ứng dụng không phải tự duy trì. Các loại trường chính gồm:
+\paragraph{Module RediSearch: chỉ mục phụ do Redis quản lý.} Redis Stack tích hợp module \textbf{RediSearch}, bổ sung khả năng đánh chỉ mục phụ tự động cho dữ liệu dạng Hash hoặc JSON. Lệnh \texttt{FT.CREATE} khai báo một chỉ mục gồm tiền tố key cần theo dõi, một lược đồ các trường cùng loại chỉ mục, và tuỳ chọn một biểu thức lọc. Sau đó, mọi lệnh ghi lên các Hash có tiền tố tương ứng đều được module tự động cập nhật vào chỉ mục, ứng dụng không phải tự duy trì. Các loại trường chính gồm:
 
 \begin{itemize}
     \item \texttt{TEXT}: chỉ mục đảo dùng cho tìm kiếm toàn văn, có tách từ, xếp hạng mức độ liên quan và tuỳ chọn \texttt{NOSTEM} để tắt việc rút gọn từ về gốc.
@@ -101,6 +102,8 @@ FT.SEARCH idx:product "@Category:{book} @Price:[0 100]"
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
 \label{subsubsec:indexing-experiment}
 
+Sau khi tìm hiểu cơ chế chỉ mục của hai hệ quản trị, nhóm tiến hành các thực nghiệm để đánh giá hiệu quả thực tế của chúng. Các kịch bản được xây dựng từ những truy vấn thường gặp nhất của Novelle, từ tra cứu đơn giản theo một cột cho đến tìm kiếm toàn văn.
+
 \paragraph{Môi trường và dữ liệu.}
 \begin{itemize}
     \item SQL Server 2019 Express trên AWS RDS (db.t3.micro); Redis Stack 7.4 (có module RediSearch) chạy trong Docker.
@@ -114,7 +117,7 @@ FT.SEARCH idx:product "@Category:{book} @Price:[0 100]"
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I1 -- Tra cứu theo một cột.}
 
-\textbf{Mục đích:} kiểm tra lợi ích cơ bản nhất của chỉ mục là tìm nhanh các dòng theo giá trị của một cột không phải khoá chính. Hai truy vấn được dùng: tìm đúng một truyện theo \texttt{Slug} (giá trị duy nhất) và tìm các truyện của một tác giả theo \texttt{AuthorId} (vài dòng).
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra lợi ích cơ bản nhất của chỉ mục là tìm nhanh các dòng theo giá trị của một cột không phải khoá chính. Hai truy vấn được dùng: tìm đúng một truyện theo \texttt{Slug} (giá trị duy nhất) và tìm các truyện của một tác giả theo \texttt{AuthorId} (vài dòng).
 
 \textbf{SQL Server:} chạy truy vấn khi chưa có chỉ mục (phải quét toàn bảng) và sau khi tạo một nonclustered index trên cột cần tìm.
 
@@ -150,12 +153,12 @@ Redis & RediSearch \texttt{TAG} & 0,029 & 0,039 \\ \hline
 \label{tab:idx-i1}
 \end{table}
 
-\textbf{Nhận xét:} chỉ mục giúp SQL Server đọc từ 74 trang xuống còn 4--10 trang và nhanh hơn 13--30 lần. Redis không có chỉ mục phụ sẵn nên khi dùng \texttt{SCAN} còn chậm hơn SQL Server quét bảng; khi có chỉ mục tự xây, việc tra cứu chỉ còn một lệnh \texttt{GET} và nhanh nhất trong các biến thể.
+\textbf{Nhận xét.} Qua kết quả trên, có thể thấy chỉ mục giúp SQL Server đọc từ 74 trang xuống còn 4--10 trang và nhanh hơn 13--30 lần. Redis không có chỉ mục phụ sẵn nên khi dùng \texttt{SCAN} còn chậm hơn SQL Server quét bảng; khi có chỉ mục tự xây, việc tra cứu chỉ còn một lệnh \texttt{GET} và nhanh nhất trong các biến thể.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I2 -- Chỉ mục nhiều cột.}
 
-\textbf{Mục đích:} kiểm tra chỉ mục khi truy vấn lọc theo nhiều điều kiện, như bộ lọc ``truyện đã hoàn thành có điểm đánh giá từ X trở lên'' (khoảng 5\% số truyện khớp). Kịch bản so sánh chỉ mục kết hợp (composite) với chỉ mục bao phủ (covering), loại chứa sẵn cả các cột cần trả về.
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra chỉ mục khi truy vấn lọc theo nhiều điều kiện, như bộ lọc ``truyện đã hoàn thành có điểm đánh giá từ X trở lên'' (khoảng 5\% số truyện khớp). Kịch bản so sánh chỉ mục kết hợp (composite) với chỉ mục bao phủ (covering), loại chứa sẵn cả các cột cần trả về.
 
 \textbf{SQL Server:}
 
@@ -194,12 +197,12 @@ Redis & RediSearch & 0,048 & 0,158 & -- \\ \hline
 \label{tab:idx-i2}
 \end{table}
 
-\textbf{Nhận xét:} dù có composite index, bộ tối ưu của SQL Server vẫn chọn quét bảng (74 trang), vì với khoảng 50 dòng khớp, việc tra ngược từng dòng để lấy \texttt{Title}, \texttt{ChapterCount} (Key Lookup) tốn hơn quét toàn bộ. Covering index chứa sẵn các cột này nên được dùng, chỉ đọc 5 trang và nhanh gấp đôi. Redis không có bộ tối ưu: cấu trúc nào được dùng là do ứng dụng chọn, và cả Sorted Set lẫn RediSearch đều nhanh hơn \texttt{SCAN} khoảng 14 lần.
+\textbf{Nhận xét.} Kết quả cho thấy dù có composite index, bộ tối ưu của SQL Server vẫn chọn quét bảng (74 trang), vì với khoảng 50 dòng khớp, việc tra ngược từng dòng để lấy \texttt{Title}, \texttt{ChapterCount} (Key Lookup) tốn hơn quét toàn bộ. Covering index chứa sẵn các cột này nên được dùng, chỉ đọc 5 trang và nhanh gấp đôi. Redis không có bộ tối ưu: cấu trúc nào được dùng là do ứng dụng chọn, và cả Sorted Set lẫn RediSearch đều nhanh hơn \texttt{SCAN} khoảng 14 lần.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I3 -- Sắp xếp và phân trang.}
 
-\textbf{Mục đích:} kiểm tra chỉ mục khi truy vấn cần kết quả đã sắp xếp và chia trang, như danh sách ``truyện mới cập nhật'' trên trang chủ, mỗi trang 20 truyện. Mỗi biến thể được đo ở trang đầu và ở trang nằm giữa danh sách, để thấy ảnh hưởng của độ sâu trang. Hai cách phân trang được so sánh: \texttt{OFFSET} (bỏ qua $n$ dòng đầu) và \emph{keyset} (lấy tiếp các dòng sau dòng cuối của trang trước).
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra chỉ mục khi truy vấn cần kết quả đã sắp xếp và chia trang, như danh sách ``truyện mới cập nhật'' trên trang chủ, mỗi trang 20 truyện. Mỗi biến thể được đo ở trang đầu và ở trang nằm giữa danh sách, để thấy ảnh hưởng của độ sâu trang. Hai cách phân trang được so sánh: \texttt{OFFSET} (bỏ qua $n$ dòng đầu) và \emph{keyset} (lấy tiếp các dòng sau dòng cuối của trang trước).
 
 \textbf{SQL Server:}
 
@@ -246,12 +249,12 @@ Redis & RediSearch \texttt{SORTBY} & 0,174 & 0,339 \\ \hline
 \label{tab:idx-i3}
 \end{table}
 
-\textbf{Nhận xét:} khi chỉ mục có sẵn đúng thứ tự cần sắp xếp, SQL Server không còn phải sắp xếp toàn bộ dữ liệu và trả trang đầu nhanh hơn khoảng 60 lần. Với \texttt{OFFSET}, các dòng bị bỏ qua vẫn phải đọc nên trang càng sâu càng chậm; keyset tránh được điều này. Sorted Set của Redis cho thời gian gần như không đổi ở mọi độ sâu, trong khi \texttt{SORTBY} của RediSearch chậm dần giống \texttt{OFFSET}.
+\textbf{Nhận xét.} Từ bảng kết quả, có thể nhận thấy khi chỉ mục có sẵn đúng thứ tự cần sắp xếp, SQL Server không còn phải sắp xếp toàn bộ dữ liệu và trả trang đầu nhanh hơn khoảng 60 lần. Với \texttt{OFFSET}, các dòng bị bỏ qua vẫn phải đọc nên trang càng sâu càng chậm; keyset tránh được điều này. Sorted Set của Redis cho thời gian gần như không đổi ở mọi độ sâu, trong khi \texttt{SORTBY} của RediSearch chậm dần giống \texttt{OFFSET}.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I4 -- Chỉ mục có lọc (filtered index).}
 
-\textbf{Mục đích:} các truy vấn công khai chỉ đọc truyện đang công khai, nên không cần đưa truyện nháp, truyện bị ẩn hay đã xoá vào chỉ mục. Kịch bản so sánh chỉ mục trên toàn bộ dữ liệu với chỉ mục chỉ chứa phần dữ liệu cần dùng, về dung lượng và tốc độ lấy trang đầu tiên.
+\textbf{Mục đích.} Trên thực tế, các truy vấn công khai chỉ đọc truyện đang công khai, nên không cần đưa truyện nháp, truyện bị ẩn hay đã xoá vào chỉ mục. Kịch bản so sánh chỉ mục trên toàn bộ dữ liệu với chỉ mục chỉ chứa phần dữ liệu cần dùng, về dung lượng và tốc độ lấy trang đầu tiên.
 
 \textbf{SQL Server:}
 
@@ -288,12 +291,12 @@ Redis & RediSearch \texttt{FILTER} & 856 & 133 & 0,156 \\ \hline
 \label{tab:idx-i4}
 \end{table}
 
-\textbf{Nhận xét:} chỉ đánh chỉ mục phần dữ liệu cần truy vấn giúp chỉ mục nhỏ hơn khoảng 20\% và truy vấn nhanh hơn ở cả hai DBMS. SQL Server hỗ trợ trực tiếp bằng mệnh đề \texttt{WHERE} khi tạo chỉ mục; với Sorted Set, ứng dụng phải tự quyết định truyện nào được thêm hoặc xoá khỏi tập. Chỉ mục RediSearch tốn bộ nhớ nhiều hơn Sorted Set tự xây.
+\textbf{Nhận xét.} Nhìn vào kết quả, có thể thấy việc chỉ đánh chỉ mục phần dữ liệu cần truy vấn giúp chỉ mục nhỏ hơn khoảng 20\% và truy vấn nhanh hơn ở cả hai DBMS. SQL Server hỗ trợ trực tiếp bằng mệnh đề \texttt{WHERE} khi tạo chỉ mục; với Sorted Set, ứng dụng phải tự quyết định truyện nào được thêm hoặc xoá khỏi tập. Chỉ mục RediSearch tốn bộ nhớ nhiều hơn Sorted Set tự xây.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I5 -- Tìm kiếm toàn văn.}
 
-\textbf{Mục đích:} kiểm tra chức năng tìm truyện theo từ khoá trong tên và phần giới thiệu. Người dùng có thể gõ có dấu hoặc không dấu, nên ngoài tốc độ, kịch bản đo thêm \emph{recall}, tức tỉ lệ số truyện tìm được so với số truyện thực sự chứa từ khoá (261 truyện ở mức 1\,000 dòng).
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra chức năng tìm truyện theo từ khoá trong tên và phần giới thiệu. Người dùng có thể gõ có dấu hoặc không dấu, nên ngoài tốc độ, kịch bản đo thêm \emph{recall}, tức tỉ lệ số truyện tìm được so với số truyện thực sự chứa từ khoá (261 truyện ở mức 1\,000 dòng).
 
 \textbf{SQL Server:} so sánh tìm chuỗi con bằng \texttt{LIKE} (phải đọc mọi dòng) với full-text index dùng \texttt{CONTAINSTABLE}. Full-text index được tạo với bộ tách từ tiếng Việt trên catalog không phân biệt dấu.
 
@@ -331,12 +334,12 @@ Redis & RediSearch trường bỏ dấu & 0,41 & 100\% & 100\% \\ \hline
 \label{tab:idx-i5}
 \end{table}
 
-\textbf{Nhận xét:} full-text index của SQL Server nhanh hơn \texttt{LIKE} khoảng 9 lần và tìm đủ cả khi người dùng gõ không dấu, nhờ bộ tách từ tiếng Việt. RediSearch nhanh hơn về thời gian nhưng không hiểu dấu tiếng Việt, nên chỉ tìm được 39\% số truyện; muốn đạt 100\%, ứng dụng phải tự chuẩn hoá và lưu thêm một bản văn bản đã bỏ dấu.
+\textbf{Nhận xét.} Qua kết quả trên, có thể thấy full-text index của SQL Server nhanh hơn \texttt{LIKE} khoảng 9 lần và tìm đủ cả khi người dùng gõ không dấu, nhờ bộ tách từ tiếng Việt. RediSearch nhanh hơn về thời gian nhưng không hiểu dấu tiếng Việt, nên chỉ tìm được 39\% số truyện; muốn đạt 100\%, ứng dụng phải tự chuẩn hoá và lưu thêm một bản văn bản đã bỏ dấu.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản I7 -- Chi phí ghi khi có chỉ mục.}
 
-\textbf{Mục đích:} chỉ mục làm đọc nhanh hơn nhưng mỗi lần ghi phải cập nhật thêm chỉ mục. Kịch bản đo thời gian thêm một truyện và cập nhật điểm đánh giá của một truyện khi bảng có 0 và 3 chỉ mục phụ (trên \texttt{RatingAvg}, \texttt{AuthorId} và \texttt{Slug} duy nhất).
+\textbf{Mục đích.} Như đã đề cập ở phần lý thuyết, chỉ mục làm đọc nhanh hơn nhưng mỗi lần ghi phải cập nhật thêm chỉ mục. Kịch bản đo thời gian thêm một truyện và cập nhật điểm đánh giá của một truyện khi bảng có 0 và 3 chỉ mục phụ (trên \texttt{RatingAvg}, \texttt{AuthorId} và \texttt{Slug} duy nhất).
 
 \textbf{SQL Server:}
 
@@ -375,11 +378,13 @@ Redis & 3 trường RediSearch & 0,037 & 0,021 \\ \hline
 \label{tab:idx-i7}
 \end{table}
 
-\textbf{Nhận xét:} với 3 chỉ mục phụ, lệnh \texttt{INSERT} của SQL Server phải đọc và ghi nhiều trang gấp 2,5 lần và chậm hơn khoảng 17\%. Trên Redis, chi phí ghi tăng 2--4 lần, nhưng giá trị tuyệt đối vẫn ở mức micro giây; đổi lại, với chỉ mục tự xây, việc giữ chỉ mục khớp với dữ liệu hoàn toàn do ứng dụng đảm nhận.
+\textbf{Nhận xét.} Kết quả cho thấy với 3 chỉ mục phụ, lệnh \texttt{INSERT} của SQL Server phải đọc và ghi nhiều trang gấp 2,5 lần và chậm hơn khoảng 17\%. Trên Redis, chi phí ghi tăng 2--4 lần, nhưng giá trị tuyệt đối vẫn ở mức micro giây; đổi lại, với chỉ mục tự xây, việc giữ chỉ mục khớp với dữ liệu hoàn toàn do ứng dụng đảm nhận.
 
 % -------------------------------------------------------------------
 \subsubsection{So sánh và đánh giá}
 \label{subsubsec:indexing-compare}
+
+Kết quả của các kịch bản trên được tổng hợp lại theo từng tiêu chí trong Bảng~\ref{tab:idx-compare}, từ đó nhóm rút ra kết luận về cách sử dụng chỉ mục cho ứng dụng Novelle.
 
 \begin{table}[H]
 \centering\small

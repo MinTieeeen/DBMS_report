@@ -1,30 +1,30 @@
 \subsection{Xử lý giao tác (Transaction)}
 \label{subsec:transaction}
 
+Trong một ứng dụng thực tế, rất nhiều nghiệp vụ không chỉ gồm một thao tác ghi đơn lẻ. Chẳng hạn, khi quản trị viên duyệt một yêu cầu làm tác giả trên Novelle, hệ thống phải đồng thời đổi trạng thái yêu cầu, đổi vai trò của tài khoản và tạo hồ sơ tác giả. Nếu một trong ba bước này thất bại mà hai bước còn lại vẫn được ghi, dữ liệu sẽ rơi vào trạng thái mâu thuẫn. Bên cạnh đó, nếu hai quản trị viên cùng duyệt một yêu cầu vào cùng thời điểm, hệ thống cũng phải bảo đảm yêu cầu đó chỉ được xử lý đúng một lần. Cơ chế giao tác chính là công cụ mà hệ quản trị cung cấp để giải quyết những vấn đề như vậy. Mục này trình bày cơ sở lý thuyết về giao tác, phân tích cách SQL Server và Redis hiện thực cơ chế này, sau đó kiểm chứng qua ba kịch bản dựa trên chính các nghiệp vụ của Novelle.
+
 \subsubsection{Cơ sở lý thuyết}
 \label{subsubsec:tx-theory}
 
-Giao tác (\emph{transaction}) là một dãy thao tác đọc, ghi được hệ quản trị xem như \emph{một đơn vị công việc}: hoặc mọi thao tác đều có hiệu lực, hoặc không thao tác nào có hiệu lực~\cite{elmasri2016fundamentals,silberschatz2019database}. Một giao tác kết thúc bằng \emph{commit} (xác nhận) hoặc \emph{rollback} (huỷ bỏ). Các khái niệm chính:
+Giao tác (\emph{transaction}) là một dãy các thao tác đọc và ghi được hệ quản trị xem như \emph{một đơn vị công việc duy nhất}: hoặc tất cả các thao tác đều có hiệu lực, hoặc không có thao tác nào có hiệu lực. Một giao tác kết thúc bằng lệnh \emph{commit} để xác nhận các thay đổi, hoặc bằng \emph{rollback} để huỷ bỏ toàn bộ chúng. Để được coi là đáng tin cậy, một giao tác cần thoả mãn bốn tính chất thường được gọi tắt là \textbf{ACID}. Tính \emph{nguyên tử} (Atomicity) yêu cầu giao tác phải được thực hiện trọn vẹn hoặc không được thực hiện gì cả. Tính \emph{nhất quán} (Consistency) yêu cầu giao tác đưa cơ sở dữ liệu từ một trạng thái hợp lệ sang một trạng thái hợp lệ khác. Tính \emph{cô lập} (Isolation) bảo đảm rằng một giao tác đang chạy không nhìn thấy kết quả dở dang của các giao tác khác. Cuối cùng, tính \emph{bền vững} (Durability) bảo đảm rằng những thay đổi đã được commit sẽ không bị mất ngay cả khi hệ thống gặp sự cố.
 
-\begin{itemize}
-    \item \textbf{Tính chất ACID:} \emph{Atomicity} (nguyên tử: tất cả hoặc không gì cả), \emph{Consistency} (nhất quán: đưa cơ sở dữ liệu từ một trạng thái hợp lệ sang một trạng thái hợp lệ khác), \emph{Isolation} (cô lập: giao tác đang chạy không thấy kết quả dở dang của giao tác khác), \emph{Durability} (bền vững: kết quả đã commit không mất khi hệ thống gặp sự cố).
-    \item \textbf{Nhật ký giao tác:} mọi thay đổi được ghi vào nhật ký trước khi ghi xuống dữ liệu (\emph{write-ahead logging}); nhờ nhật ký, hệ quản trị có thể huỷ (\emph{undo}) giao tác bị lỗi và làm lại (\emph{redo}) giao tác đã commit sau sự cố.
-    \item \textbf{Lịch thao tác khả tuần tự:} khi nhiều giao tác chạy xen kẽ, kết quả được coi là đúng nếu tương đương với một thứ tự chạy lần lượt nào đó của chúng.
-    \item \textbf{Các bất thường khi chạy xen kẽ:} \emph{lost update} (hai giao tác cùng đọc rồi cùng ghi, một lần ghi bị mất), \emph{dirty read} (đọc dữ liệu chưa commit), \emph{non-repeatable read} (đọc lại một dòng thấy giá trị khác), \emph{phantom} (đọc lại một tập điều kiện thấy thêm dòng mới).
-    \item \textbf{Mức cô lập} (\emph{isolation level}) theo chuẩn SQL: \texttt{READ UNCOMMITTED}, \texttt{READ COMMITTED}, \texttt{REPEATABLE READ}, \texttt{SERIALIZABLE}; mức càng cao thì càng ít bất thường nhưng càng phải chờ nhau nhiều hơn.
-    \item \textbf{Khoá bi quan và kiểm soát lạc quan:} khoá bi quan (\emph{pessimistic}, giao thức khoá hai pha) bắt giao tác khác \emph{chờ} trước khi đụng vào dữ liệu đang bị khoá; kiểm soát lạc quan (\emph{optimistic}) cho mọi giao tác chạy, đến lúc ghi mới kiểm tra xung đột và \emph{huỷ} giao tác bị xung đột để chạy lại.
-    \item \textbf{Deadlock:} hai giao tác chờ khoá của nhau theo vòng; hệ quản trị phải phát hiện và huỷ một giao tác để phá vòng chờ.
-\end{itemize}
+Để hiện thực tính nguyên tử và tính bền vững, các hệ quản trị thường sử dụng \textbf{nhật ký giao tác}. Theo nguyên tắc ghi nhật ký trước (\emph{write-ahead logging}), mọi thay đổi phải được ghi vào nhật ký trước khi được ghi xuống dữ liệu. Nhờ vậy, khi một giao tác bị lỗi, hệ quản trị có thể dựa vào nhật ký để huỷ (\emph{undo}) các thay đổi của nó; ngược lại, sau một sự cố, hệ quản trị có thể làm lại (\emph{redo}) những giao tác đã commit nhưng chưa kịp ghi xuống dữ liệu.
+
+Trong khi đó, tính cô lập liên quan đến tình huống nhiều giao tác chạy xen kẽ nhau. Một lịch thực hiện xen kẽ được coi là đúng nếu kết quả của nó tương đương với việc chạy các giao tác lần lượt theo một thứ tự nào đó, tức là lịch \emph{khả tuần tự}. Nếu không được kiểm soát, việc chạy xen kẽ có thể gây ra nhiều bất thường. Hai giao tác cùng đọc rồi cùng ghi một giá trị có thể khiến một lần ghi bị mất (\emph{lost update}); một giao tác có thể đọc phải dữ liệu chưa được commit (\emph{dirty read}); đọc lại cùng một dòng có thể thấy giá trị khác (\emph{non-repeatable read}); hoặc đọc lại cùng một điều kiện có thể thấy xuất hiện thêm dòng mới (\emph{phantom}). Chuẩn SQL định nghĩa bốn \textbf{mức cô lập} để kiểm soát các bất thường này, gồm \texttt{READ UNCOMMITTED}, \texttt{READ COMMITTED}, \texttt{REPEATABLE READ} và \texttt{SERIALIZABLE}. Mức cô lập càng cao thì càng loại bỏ được nhiều bất thường, nhưng đổi lại các giao tác phải chờ nhau nhiều hơn.
+
+Để bảo đảm tính cô lập, có hai hướng tiếp cận chính. Hướng thứ nhất là \textbf{khoá bi quan} (\emph{pessimistic locking}), tiêu biểu là giao thức khoá hai pha, trong đó một giao tác muốn đụng vào dữ liệu đang bị khoá thì phải \emph{chờ}. Hướng thứ hai là \textbf{kiểm soát lạc quan} (\emph{optimistic concurrency control}), trong đó mọi giao tác đều được chạy, chỉ đến lúc ghi mới kiểm tra xung đột và \emph{huỷ} giao tác bị xung đột để chạy lại. Khi sử dụng khoá, hệ thống còn có thể gặp tình trạng \textbf{deadlock}: hai giao tác chờ khoá của nhau theo vòng tròn và không giao tác nào tiến được. Khi đó, hệ quản trị phải phát hiện vòng chờ và chủ động huỷ một giao tác để giải phóng các giao tác còn lại.
 
 % -------------------------------------------------------------------
 \subsubsection{Cơ chế xử lý giao tác trên MS SQL Server}
 \label{subsubsec:tx-mssql}
 
-\paragraph{Chế độ giao tác.} Mặc định SQL Server chạy ở chế độ \emph{autocommit}: mỗi câu lệnh là một giao tác riêng và tự commit khi kết thúc. Muốn gộp nhiều câu lệnh thành một đơn vị, ứng dụng mở giao tác tường minh bằng \texttt{BEGIN TRANSACTION} rồi kết thúc bằng \texttt{COMMIT} hoặc \texttt{ROLLBACK}; hoặc tắt autocommit từ phía trình điều khiển (JDBC, ODBC) và gọi \texttt{commit()}/\texttt{rollback()} từ ứng dụng, như cách Spring \texttt{@Transactional} làm~\cite{mssqldocs}. Một trigger luôn chạy trong cùng giao tác với câu lệnh đã kích hoạt nó.
+Dựa trên những khái niệm vừa trình bày, phần này phân tích cách SQL Server hiện thực giao tác trong thực tế, từ cách mở và kết thúc một giao tác, cách xử lý lỗi, cho đến cơ chế khoá và phát hiện deadlock.
 
-\paragraph{Nhật ký và khôi phục.} Mọi thay đổi được ghi vào nhật ký giao tác (\emph{transaction log}) trước; một giao tác chỉ được coi là commit khi bản ghi nhật ký của nó đã ghi xuống đĩa. Khi rollback, SQL Server đọc ngược nhật ký để huỷ từng thay đổi của giao tác, nên các bước đã ghi trước đó cũng được huỷ theo~\cite{mslearn_transaction_log}.
+\paragraph{Chế độ giao tác.} Mặc định SQL Server chạy ở chế độ \emph{autocommit}: mỗi câu lệnh là một giao tác riêng và tự commit khi kết thúc. Muốn gộp nhiều câu lệnh thành một đơn vị, ứng dụng mở giao tác tường minh bằng \texttt{BEGIN TRANSACTION} rồi kết thúc bằng \texttt{COMMIT} hoặc \texttt{ROLLBACK}; hoặc tắt autocommit từ phía trình điều khiển (JDBC, ODBC) và gọi \texttt{commit()}/\texttt{rollback()} từ ứng dụng, như cách Spring \texttt{@Transactional} làm. Một trigger luôn chạy trong cùng giao tác với câu lệnh đã kích hoạt nó.
 
-\paragraph{Xử lý lỗi: \texttt{XACT\_ABORT} và \texttt{XACT\_STATE()}.} Lỗi bên trong giao tác \emph{không} tự động huỷ cả giao tác. Với \texttt{SET XACT\_ABORT OFF} (mặc định), phần lớn lỗi ràng buộc như vi phạm khoá duy nhất (lỗi 2627) chỉ huỷ \emph{câu lệnh} bị lỗi, giao tác vẫn mở và vẫn commit được. Với \texttt{SET XACT\_ABORT ON}, lỗi lúc chạy làm cả giao tác bị huỷ~\cite{mslearn_set_xact_abort}. Trong khối \texttt{CATCH}, hàm \texttt{XACT\_STATE()} cho biết trạng thái giao tác: \texttt{1} là còn commit được, \texttt{-1} là không commit được và bắt buộc phải rollback, \texttt{0} là không có giao tác nào đang mở~\cite{mslearn_xact_state}. Mọi thủ tục lưu trữ của Novelle dùng chung khuôn mẫu:
+\paragraph{Nhật ký và khôi phục.} Mọi thay đổi được ghi vào nhật ký giao tác (\emph{transaction log}) trước; một giao tác chỉ được coi là commit khi bản ghi nhật ký của nó đã ghi xuống đĩa. Khi rollback, SQL Server đọc ngược nhật ký để huỷ từng thay đổi của giao tác, nên các bước đã ghi trước đó cũng được huỷ theo.
+
+\paragraph{Xử lý lỗi: \texttt{XACT\_ABORT} và \texttt{XACT\_STATE()}.} Lỗi bên trong giao tác \emph{không} tự động huỷ cả giao tác. Với \texttt{SET XACT\_ABORT OFF} (mặc định), phần lớn lỗi ràng buộc như vi phạm khoá duy nhất (lỗi 2627) chỉ huỷ \emph{câu lệnh} bị lỗi, giao tác vẫn mở và vẫn commit được. Với \texttt{SET XACT\_ABORT ON}, lỗi lúc chạy làm cả giao tác bị huỷ. Trong khối \texttt{CATCH}, hàm \texttt{XACT\_STATE()} cho biết trạng thái giao tác: \texttt{1} là còn commit được, \texttt{-1} là không commit được và bắt buộc phải rollback, \texttt{0} là không có giao tác nào đang mở. Mọi thủ tục lưu trữ của Novelle dùng chung khuôn mẫu:
 
 \begin{minted}[fontsize=\small,frame=single,breaklines]{sql}
 SET XACT_ABORT ON;
@@ -39,7 +39,7 @@ BEGIN CATCH
 END CATCH;
 \end{minted}
 
-\paragraph{Khoá.} SQL Server dùng khoá để bảo đảm tính cô lập~\cite{mslearn_locking_row_versioning}. Các kiểu khoá chính:
+\paragraph{Khoá.} SQL Server dùng khoá để bảo đảm tính cô lập. Các kiểu khoá chính:
 
 \begin{itemize}
     \item \textbf{Khoá chia sẻ (S):} khi đọc; nhiều giao tác có thể cùng giữ khoá S trên một tài nguyên.
@@ -52,15 +52,17 @@ Khoá có thể đặt ở mức dòng, trang hoặc bảng, và được nâng 
 
 \paragraph{Mức cô lập.} SQL Server hỗ trợ đủ bốn mức cô lập của chuẩn SQL, cộng thêm \texttt{SNAPSHOT} và tuỳ chọn \texttt{READ\_COMMITTED\_SNAPSHOT} dựa trên phiên bản dòng (\emph{row versioning}) trong \texttt{tempdb}: người đọc thấy phiên bản đã commit gần nhất thay vì phải chờ khoá của người ghi. Cơ sở dữ liệu \texttt{NovelleDB} tắt cả hai tuỳ chọn này, nên \texttt{READ COMMITTED} hoạt động bằng khoá: khoá S chỉ được giữ trong lúc đọc, còn khoá X được giữ đến cuối giao tác. Ở mức \texttt{REPEATABLE READ}, khoá S cũng được giữ đến cuối giao tác.
 
-\paragraph{Phát hiện deadlock.} Một tiến trình nền (\emph{lock monitor}) định kỳ tìm vòng chờ trong đồ thị chờ khoá. Khi gặp deadlock, SQL Server chọn một giao tác làm nạn nhân (\emph{victim}), thường là giao tác rẻ nhất để rollback, huỷ nó và trả lỗi \textbf{1205}; ứng dụng phải bắt lỗi này và chạy lại giao tác~\cite{mslearn_deadlocks}.
+\paragraph{Phát hiện deadlock.} Một tiến trình nền (\emph{lock monitor}) định kỳ tìm vòng chờ trong đồ thị chờ khoá. Khi gặp deadlock, SQL Server chọn một giao tác làm nạn nhân (\emph{victim}), thường là giao tác rẻ nhất để rollback, huỷ nó và trả lỗi \textbf{1205}; ứng dụng phải bắt lỗi này và chạy lại giao tác.
 
 % -------------------------------------------------------------------
 \subsubsection{Cơ chế xử lý giao tác trên Redis}
 \label{subsubsec:tx-redis}
 
-\paragraph{Mô hình thực thi đơn luồng.} Redis thực thi lệnh trên một luồng chính, lần lượt từng lệnh một~\cite{redisdocs}. Vì vậy mỗi lệnh đơn lẻ như \texttt{INCR}, \texttt{HINCRBY}, \texttt{SADD} luôn nguyên tử và không bao giờ bị lệnh khác chen vào giữa. Redis không có khoá, không có mức cô lập và không có deadlock; vấn đề chỉ phát sinh khi một nghiệp vụ cần \emph{nhiều} lệnh, vì lệnh của client khác có thể chen vào giữa các lệnh đó.
+Khác với SQL Server, Redis tiếp cận vấn đề giao tác theo một hướng đơn giản hơn nhiều, xuất phát từ chính mô hình thực thi đơn luồng của nó. Phần này lần lượt trình bày mô hình thực thi đó và các công cụ mà Redis cung cấp để gom nhiều lệnh thành một đơn vị.
 
-\paragraph{\texttt{MULTI}/\texttt{EXEC}/\texttt{DISCARD}.} Sau lệnh \texttt{MULTI}, các lệnh tiếp theo không chạy ngay mà được xếp vào hàng đợi (Redis trả về \texttt{QUEUED}); lệnh \texttt{EXEC} chạy toàn bộ hàng đợi liên tục, không lệnh nào của client khác xen vào được; \texttt{DISCARD} bỏ hàng đợi~\cite{redis_transactions}. Có hai loại lỗi với hành vi khác nhau:
+\paragraph{Mô hình thực thi đơn luồng.} Redis thực thi lệnh trên một luồng chính, lần lượt từng lệnh một. Vì vậy mỗi lệnh đơn lẻ như \texttt{INCR}, \texttt{HINCRBY}, \texttt{SADD} luôn nguyên tử và không bao giờ bị lệnh khác chen vào giữa. Redis không có khoá, không có mức cô lập và không có deadlock; vấn đề chỉ phát sinh khi một nghiệp vụ cần \emph{nhiều} lệnh, vì lệnh của client khác có thể chen vào giữa các lệnh đó.
+
+\paragraph{\texttt{MULTI}/\texttt{EXEC}/\texttt{DISCARD}.} Sau lệnh \texttt{MULTI}, các lệnh tiếp theo không chạy ngay mà được xếp vào hàng đợi (Redis trả về \texttt{QUEUED}); lệnh \texttt{EXEC} chạy toàn bộ hàng đợi liên tục, không lệnh nào của client khác xen vào được; \texttt{DISCARD} bỏ hàng đợi. Có hai loại lỗi với hành vi khác nhau:
 
 \begin{itemize}
     \item \textbf{Lỗi lúc xếp lệnh} (sai cú pháp, sai số tham số): Redis đánh dấu giao tác hỏng và \texttt{EXEC} trả về \texttt{EXECABORT}, không lệnh nào được chạy.
@@ -78,13 +80,15 @@ HSET  user:7 Role AUTHOR
 EXEC                             -- nil nếu req:42 bị sửa sau WATCH
 \end{minted}
 
-\paragraph{Script Lua.} Lệnh \texttt{EVAL}/\texttt{EVALSHA} chạy một script Lua trên server; trong lúc script chạy, không lệnh nào khác được thực thi~\cite{redis_lua_scripting}. Script có thể đọc dữ liệu, rẽ nhánh theo kết quả và ghi trong cùng một bước nguyên tử, điều mà \texttt{MULTI}/\texttt{EXEC} không làm được (các lệnh trong hàng đợi không đọc được kết quả của nhau). Tuy nhiên, script cũng \emph{không} rollback: nếu một lệnh trong script lỗi, các lệnh đã chạy trước đó vẫn giữ nguyên. Muốn có ``tất cả hoặc không gì cả'', script phải kiểm tra mọi điều kiện có thể gây lỗi trước lệnh ghi đầu tiên.
+\paragraph{Script Lua.} Lệnh \texttt{EVAL}/\texttt{EVALSHA} chạy một script Lua trên server; trong lúc script chạy, không lệnh nào khác được thực thi. Script có thể đọc dữ liệu, rẽ nhánh theo kết quả và ghi trong cùng một bước nguyên tử, điều mà \texttt{MULTI}/\texttt{EXEC} không làm được (các lệnh trong hàng đợi không đọc được kết quả của nhau). Tuy nhiên, script cũng \emph{không} rollback: nếu một lệnh trong script lỗi, các lệnh đã chạy trước đó vẫn giữ nguyên. Muốn có ``tất cả hoặc không gì cả'', script phải kiểm tra mọi điều kiện có thể gây lỗi trước lệnh ghi đầu tiên.
 
-\paragraph{Tính bền vững.} Kết quả của \texttt{EXEC} chỉ bền vững theo cấu hình lưu trữ: với AOF và \texttt{appendfsync everysec}, có thể mất khoảng một giây dữ liệu khi máy gặp sự cố (xem mục~\ref{subsec:backup-recovery}); với RDB, mất phần dữ liệu từ lần snapshot gần nhất~\cite{redis_persistence}.
+\paragraph{Tính bền vững.} Kết quả của \texttt{EXEC} chỉ bền vững theo cấu hình lưu trữ: với AOF và \texttt{appendfsync everysec}, có thể mất khoảng một giây dữ liệu khi máy gặp sự cố (xem mục~\ref{subsec:backup-recovery}); với RDB, mất phần dữ liệu từ lần snapshot gần nhất.
 
 % -------------------------------------------------------------------
 \subsubsection{Thiết kế kịch bản và thực hiện thực nghiệm}
 \label{subsubsec:tx-experiment}
+
+Để kiểm chứng những khác biệt về mặt lý thuyết ở trên, nhóm thiết kế ba kịch bản thực nghiệm. Thay vì dùng các ví dụ chung chung, mỗi kịch bản đều được xây dựng từ một nghiệp vụ có thật của Novelle, nhờ đó kết quả thu được có thể áp dụng trực tiếp vào ứng dụng.
 
 \paragraph{Môi trường và dữ liệu.}
 \begin{itemize}
@@ -99,7 +103,7 @@ EXEC                             -- nil nếu req:42 bị sửa sau WATCH
 % -------------------------------------------------------------------
 \paragraph{Kịch bản T1 -- Hai quản trị viên duyệt cùng lúc.}
 
-\textbf{Mục đích:} kiểm tra cơ chế nào bảo đảm một yêu cầu làm tác giả chỉ được duyệt \emph{đúng một lần} khi hai quản trị viên bấm duyệt cùng lúc. Có hai trường hợp: (a) cả hai cùng duyệt một yêu cầu; (b) hai yêu cầu khác nhau nhưng đề xuất cùng một bút danh. Mỗi phiên dừng 300~ms giữa bước kiểm tra và bước ghi, để hai phiên chắc chắn chạy chồng lên nhau.
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra cơ chế nào bảo đảm một yêu cầu làm tác giả chỉ được duyệt \emph{đúng một lần} khi hai quản trị viên bấm duyệt cùng lúc. Có hai trường hợp: (a) cả hai cùng duyệt một yêu cầu; (b) hai yêu cầu khác nhau nhưng đề xuất cùng một bút danh. Mỗi phiên dừng 300~ms giữa bước kiểm tra và bước ghi, để hai phiên chắc chắn chạy chồng lên nhau.
 
 \textbf{SQL Server:} so sánh bốn biến thể: đọc rồi ghi ở \texttt{READ COMMITTED} không có lock hint; đọc với \texttt{UPDLOCK, HOLDLOCK} như thủ tục thật (khoá bi quan); kiểm tra ngay trong câu ghi bằng \texttt{UPDATE \ldots{} WHERE Status = 'PENDING'} rồi xem \texttt{@@ROWCOUNT}; và đọc rồi ghi ở \texttt{REPEATABLE READ}. Với trường hợp (b), có thêm một biến thể bỏ ràng buộc \texttt{UQ\_Author\_PenName}.
 
@@ -154,12 +158,12 @@ return {1, 'APPROVED'}
 \label{tab:tx-t1}
 \end{table}
 
-\textbf{Nhận xét:} khi đọc rồi ghi mà không khoá, logic của cả hai DBMS đều sai như nhau: cả hai quản trị viên đều đọc thấy yêu cầu đang chờ duyệt. SQL Server vẫn cho kết quả đúng là nhờ khoá chính và ràng buộc duy nhất chặn lại ở bước ghi; khi bỏ ràng buộc duy nhất, SQL Server cũng ghi trùng bút danh như Redis. Khoá bi quan bắt người đến sau \emph{chờ} đúng bằng thời gian người trước giữ khoá (khoảng 300~ms), còn \texttt{WATCH} không chặn ai mà \emph{huỷ} \texttt{EXEC} của người đến sau để client thử lại. Mức \texttt{REPEATABLE READ} không an toàn hơn: hai phiên cùng giữ khoá S rồi cùng xin nâng lên khoá X nên rơi vào deadlock; cách đúng là đọc với \texttt{UPDLOCK} hoặc kiểm tra ngay trong câu \texttt{UPDATE}. Cả hai DBMS đều không vi phạm RB13 ở mọi biến thể: mỗi lần duyệt đều ghi đủ ba bước.
+\textbf{Nhận xét.} Qua kết quả trên, có thể thấy khi đọc rồi ghi mà không khoá, logic của cả hai DBMS đều sai như nhau: cả hai quản trị viên đều đọc thấy yêu cầu đang chờ duyệt. SQL Server vẫn cho kết quả đúng là nhờ khoá chính và ràng buộc duy nhất chặn lại ở bước ghi; khi bỏ ràng buộc duy nhất, SQL Server cũng ghi trùng bút danh như Redis. Khoá bi quan bắt người đến sau \emph{chờ} đúng bằng thời gian người trước giữ khoá (khoảng 300~ms), còn \texttt{WATCH} không chặn ai mà \emph{huỷ} \texttt{EXEC} của người đến sau để client thử lại. Mức \texttt{REPEATABLE READ} không an toàn hơn: hai phiên cùng giữ khoá S rồi cùng xin nâng lên khoá X nên rơi vào deadlock; cách đúng là đọc với \texttt{UPDLOCK} hoặc kiểm tra ngay trong câu \texttt{UPDATE}. Cả hai DBMS đều không vi phạm RB13 ở mọi biến thể: mỗi lần duyệt đều ghi đủ ba bước.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản T2 -- Lỗi xảy ra giữa giao tác.}
 
-\textbf{Mục đích:} kiểm tra tính nguyên tử khi một nghiệp vụ nhiều bước gặp lỗi giữa chừng. Việc duyệt tác giả gồm ba bước ghi: (1) đổi trạng thái \texttt{AuthorRequest}, (2) đổi \texttt{User.Role} thành \texttt{AUTHOR}, (3) tạo dòng \texttt{Author}; bước 3 được cố ý làm cho lỗi. Kết quả đúng là \textbf{0/3 bước} còn lại và không vi phạm RB13.
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra tính nguyên tử khi một nghiệp vụ nhiều bước gặp lỗi giữa chừng. Việc duyệt tác giả gồm ba bước ghi: (1) đổi trạng thái \texttt{AuthorRequest}, (2) đổi \texttt{User.Role} thành \texttt{AUTHOR}, (3) tạo dòng \texttt{Author}; bước 3 được cố ý làm cho lỗi. Kết quả đúng là \textbf{0/3 bước} còn lại và không vi phạm RB13.
 
 \textbf{SQL Server:} bút danh đề xuất đã có người dùng nên \texttt{INSERT Author} vi phạm \texttt{UQ\_Author\_PenName} (lỗi 2627). So sánh bốn biến thể: autocommit; giao tác mở từ ứng dụng (tắt autocommit, client gọi \texttt{rollback()}); \texttt{XACT\_ABORT ON} với \texttt{TRY}/\texttt{CATCH} như các thủ tục của Novelle; và \texttt{XACT\_ABORT OFF}, bắt lỗi xong vẫn \texttt{COMMIT}.
 
@@ -208,12 +212,12 @@ Redis & Bù trừ từ client & 0/3 & 0 \\ \hline
 \label{tab:tx-t2}
 \end{table}
 
-\textbf{Nhận xét:} SQL Server huỷ được cả ba bước nhờ nhật ký giao tác, nhưng chỉ khi giao tác thực sự được rollback: có \texttt{BEGIN TRANSACTION} mà \texttt{XACT\_ABORT OFF} thì lỗi 2627 chỉ huỷ câu lệnh lỗi, giao tác vẫn commit được và kết quả giống hệt khi không có giao tác. Với Redis, \texttt{MULTI}/\texttt{EXEC} và Lua chỉ bảo đảm không lệnh nào của client khác chen vào giữa, \emph{không} bảo đảm rollback: lỗi lúc chạy để lại 2/3 bước. Redis chỉ cho kết quả ``tất cả hoặc không gì cả'' khi lỗi được phát hiện \emph{trước} lệnh ghi đầu tiên (\texttt{EXECABORT}, \texttt{DISCARD}, Lua kiểm tra trước). Bù trừ từ client đưa dữ liệu về như cũ nhưng không nguyên tử: trong khoảng thời gian giữa lỗi và lúc bù trừ, client khác vẫn thấy người dùng đã có vai trò \texttt{AUTHOR}.
+\textbf{Nhận xét.} Kết quả cho thấy SQL Server huỷ được cả ba bước nhờ nhật ký giao tác, nhưng chỉ khi giao tác thực sự được rollback: có \texttt{BEGIN TRANSACTION} mà \texttt{XACT\_ABORT OFF} thì lỗi 2627 chỉ huỷ câu lệnh lỗi, giao tác vẫn commit được và kết quả giống hệt khi không có giao tác. Với Redis, \texttt{MULTI}/\texttt{EXEC} và Lua chỉ bảo đảm không lệnh nào của client khác chen vào giữa, \emph{không} bảo đảm rollback: lỗi lúc chạy để lại 2/3 bước. Redis chỉ cho kết quả ``tất cả hoặc không gì cả'' khi lỗi được phát hiện \emph{trước} lệnh ghi đầu tiên (\texttt{EXECABORT}, \texttt{DISCARD}, Lua kiểm tra trước). Bù trừ từ client đưa dữ liệu về như cũ nhưng không nguyên tử: trong khoảng thời gian giữa lỗi và lúc bù trừ, client khác vẫn thấy người dùng đã có vai trò \texttt{AUTHOR}.
 
 % -------------------------------------------------------------------
 \paragraph{Kịch bản T3 -- Giao tác khi tải tăng.}
 
-\textbf{Mục đích:} kiểm tra hiệu năng và tính đúng của giao tác khi nhiều người dùng cùng ghi vào một dòng. Có 200 lượt đánh giá cho cùng một truyện, mỗi lượt của một người dùng khác nhau, điểm 1--5 lần lượt (trung bình đúng là 3,00), được chia đều cho 1, 10, 50 và 100 client đồng thời. Mỗi mức tải có giới hạn 60~giây; deadlock (SQL Server) hoặc \texttt{EXEC} bị huỷ (Redis) đều được thử lại.
+\textbf{Mục đích.} Kịch bản này nhằm kiểm tra hiệu năng và tính đúng của giao tác khi nhiều người dùng cùng ghi vào một dòng. Có 200 lượt đánh giá cho cùng một truyện, mỗi lượt của một người dùng khác nhau, điểm 1--5 lần lượt (trung bình đúng là 3,00), được chia đều cho 1, 10, 50 và 100 client đồng thời. Mỗi mức tải có giới hạn 60~giây; deadlock (SQL Server) hoặc \texttt{EXEC} bị huỷ (Redis) đều được thử lại.
 
 \textbf{SQL Server:} so sánh thiết kế hiện tại của Novelle (chỉ \texttt{INSERT Rating}, trigger \texttt{trg\_Rating} tính lại \texttt{AVG}/\texttt{COUNT} từ toàn bộ đánh giá của truyện) với cách cộng dồn: một giao tác gồm \texttt{INSERT} và một câu \texttt{UPDATE} tăng tổng điểm và số lượt.
 
@@ -269,11 +273,13 @@ Redis & \texttt{WATCH}: thời gian server (micro giây/lượt) & 8 & 37 & 73 &
 \label{tab:tx-t3-conflict}
 \end{table}
 
-\textbf{Nhận xét:} ở mọi mức tải, \texttt{RatingCount} và \texttt{RatingAvg} cuối cùng đều khớp với giá trị tính lại từ toàn bộ đánh giá, nên cả bốn biến thể đều đúng; khác biệt nằm ở chi phí. Thiết kế hiện tại với \texttt{trg\_Rating} sụp đổ ngay từ 10 client: thông lượng giảm từ 4,6 xuống dưới 1 lượt mỗi giây với hơn 400 deadlock, và phần lớn lượt đánh giá không kịp chạy trong 60~giây. Nguyên nhân là trigger vừa giữ khoá X trên dòng \texttt{Story}, vừa phải đọc toàn bộ đánh giá của truyện, trong đó có các đánh giá chưa commit của phiên khác, nên các phiên chờ nhau theo vòng. Cách cộng dồn không đọc lại đánh giá và luôn khoá theo cùng một thứ tự, nên các phiên chỉ xếp hàng chờ khoá dòng \texttt{Story}, không có deadlock, và thông lượng tăng tới 216 lượt mỗi giây ở 100 client. Trên Redis, Lua không bao giờ xung đột vì mỗi script chạy trọn vẹn trước script kế tiếp; \texttt{WATCH} giảm nhanh khi tranh chấp tăng, vì mỗi lần \texttt{EXEC} thành công lại làm hỏng mọi \texttt{WATCH} đang chờ khác, dẫn tới hàng nghìn lần thử lại. Về thời gian phía server, SQL Server mất vài đến vài chục mili giây cho mỗi lượt cộng dồn (tăng theo thời gian chờ khoá), còn Redis chỉ mất vài chục micro giây.
+\textbf{Nhận xét.} Từ bảng kết quả, có thể nhận thấy ở mọi mức tải, \texttt{RatingCount} và \texttt{RatingAvg} cuối cùng đều khớp với giá trị tính lại từ toàn bộ đánh giá, nên cả bốn biến thể đều đúng; khác biệt nằm ở chi phí. Thiết kế hiện tại với \texttt{trg\_Rating} sụp đổ ngay từ 10 client: thông lượng giảm từ 4,6 xuống dưới 1 lượt mỗi giây với hơn 400 deadlock, và phần lớn lượt đánh giá không kịp chạy trong 60~giây. Nguyên nhân là trigger vừa giữ khoá X trên dòng \texttt{Story}, vừa phải đọc toàn bộ đánh giá của truyện, trong đó có các đánh giá chưa commit của phiên khác, nên các phiên chờ nhau theo vòng. Cách cộng dồn không đọc lại đánh giá và luôn khoá theo cùng một thứ tự, nên các phiên chỉ xếp hàng chờ khoá dòng \texttt{Story}, không có deadlock, và thông lượng tăng tới 216 lượt mỗi giây ở 100 client. Trên Redis, Lua không bao giờ xung đột vì mỗi script chạy trọn vẹn trước script kế tiếp; \texttt{WATCH} giảm nhanh khi tranh chấp tăng, vì mỗi lần \texttt{EXEC} thành công lại làm hỏng mọi \texttt{WATCH} đang chờ khác, dẫn tới hàng nghìn lần thử lại. Về thời gian phía server, SQL Server mất vài đến vài chục mili giây cho mỗi lượt cộng dồn (tăng theo thời gian chờ khoá), còn Redis chỉ mất vài chục micro giây.
 
 % -------------------------------------------------------------------
 \subsubsection{So sánh và đánh giá}
 \label{subsubsec:tx-compare}
+
+Từ kết quả của ba kịch bản, nhóm tổng hợp sự khác biệt giữa hai hệ quản trị theo từng tiêu chí của giao tác trong Bảng~\ref{tab:tx-compare}, sau đó rút ra kết luận cho ứng dụng Novelle.
 
 \begin{table}[H]
 \centering\small

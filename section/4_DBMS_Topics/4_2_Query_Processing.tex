@@ -1,10 +1,12 @@
 \subsection{Xử lý truy vấn (Query Processing)}
 \label{subsec:query-processing}
 
+Nếu chỉ mục cung cấp các "đường tắt" để đi đến dữ liệu, thì bộ xử lý truy vấn là thành phần quyết định sẽ đi theo con đường nào. Mục này tìm hiểu cách SQL Server biến một câu truy vấn khai báo thành kế hoạch thực thi cụ thể, đồng thời so sánh với cách Redis xử lý từng lệnh, nơi mà "kế hoạch" do chính người lập trình thiết kế từ trước. Các truy vấn được chọn để thực nghiệm đều là truy vấn thật của Novelle, ứng với các loại truy vấn mà đề bài yêu cầu.
+
 \subsubsection{Cơ sở lý thuyết}
 
 \paragraph{Quy trình xử lý truy vấn và kế hoạch thực thi.}
-SQL là ngôn ngữ \textit{khai báo} (declarative): câu truy vấn chỉ mô tả \textit{dữ liệu cần lấy}, còn \textit{cách lấy}, gồm đọc bảng nào trước, có dùng index hay không, kết nối các bảng bằng thuật toán nào, do hệ quản trị cơ sở dữ liệu quyết định. Quá trình xử lý một câu truy vấn gồm ba bước (Hình~\ref{fig:qp-steps})~\cite{silberschatz2019database, elmasri2016fundamentals}:
+SQL là ngôn ngữ \textit{khai báo} (declarative): câu truy vấn chỉ mô tả \textit{dữ liệu cần lấy}, còn \textit{cách lấy}, gồm đọc bảng nào trước, có dùng index hay không, kết nối các bảng bằng thuật toán nào, do hệ quản trị cơ sở dữ liệu quyết định. Quá trình xử lý một câu truy vấn gồm ba bước (Hình~\ref{fig:qp-steps}):
 \begin{enumerate}
     \item \textbf{Phân tích cú pháp và dịch}: kiểm tra câu lệnh và các bảng, cột được nhắc đến, rồi dịch sang một biểu thức \textit{đại số quan hệ}.
     \item \textbf{Tối ưu hoá}: bộ tối ưu hoá (query optimizer) xét các cách thực hiện tương đương và chọn cách có chi phí ước lượng thấp nhất.
@@ -38,19 +40,19 @@ SQL là ngôn ngữ \textit{khai báo} (declarative): câu truy vấn chỉ mô 
         \draw[->] (stats) -- (opt);
         \draw[<->] (store) -- (exec);
     \end{tikzpicture}
-    \caption{Các bước xử lý một câu truy vấn (dựa theo \cite{silberschatz2019database})}
+    \caption{Các bước xử lý một câu truy vấn (dựa theo)}
     \label{fig:qp-steps}
 \end{figure}
 
-Kết quả của bước tối ưu hoá là một \textit{kế hoạch thực thi} (execution plan): một cây các phép toán, trong đó mỗi phép toán (chọn, kết nối, sắp xếp, gom nhóm\ldots) đi kèm một thuật toán cụ thể; các nút lá đọc dữ liệu từ bảng hoặc index, dữ liệu đi từ lá lên gốc~\cite{silberschatz2019database}. Một câu truy vấn có thể có nhiều kế hoạch cho cùng kết quả. Chẳng hạn, phép chọn $\sigma_{A = a}(r)$ có thể được thực hiện bằng cách \textit{đọc cả bảng} $r$ rồi giữ lại các dòng có $A = a$, hoặc \textit{dùng index} trên cột $A$ để tìm thẳng các dòng đó rồi đọc phần còn lại của từng dòng.
+Kết quả của bước tối ưu hoá là một \textit{kế hoạch thực thi} (execution plan): một cây các phép toán, trong đó mỗi phép toán (chọn, kết nối, sắp xếp, gom nhóm\ldots) đi kèm một thuật toán cụ thể; các nút lá đọc dữ liệu từ bảng hoặc index, dữ liệu đi từ lá lên gốc. Một câu truy vấn có thể có nhiều kế hoạch cho cùng kết quả. Chẳng hạn, phép chọn $\sigma_{A = a}(r)$ có thể được thực hiện bằng cách \textit{đọc cả bảng} $r$ rồi giữ lại các dòng có $A = a$, hoặc \textit{dùng index} trên cột $A$ để tìm thẳng các dòng đó rồi đọc phần còn lại của từng dòng.
 
 \paragraph{Tối ưu hoá dựa trên chi phí.}
-Bộ tối ưu hoá chọn kế hoạch bằng cách \textit{ước lượng} chi phí của từng kế hoạch trước khi chạy. Thước đo chính là số trang (khối) phải đọc từ đĩa, trong đó đọc tuần tự nhiều trang liền nhau rẻ hơn đọc cùng số trang đó ở các vị trí rời rạc; ngoài ra còn tính chi phí CPU và bộ nhớ cho các phép sắp xếp, băm~\cite{silberschatz2019database}. Để ước lượng, hệ quản trị dùng \textit{thống kê} lưu trong danh mục hệ thống: số dòng của bảng, số giá trị khác nhau của mỗi cột, histogram phân bố giá trị. Từ đó nó ước lượng \textit{số dòng} (cardinality) mà mỗi bước tạo ra; ví dụ, với bảng $r$ có $n_r$ dòng và cột $A$ có $V(A, r)$ giá trị khác nhau, nếu giả định các giá trị phân bố đều thì điều kiện $A = a$ được ước lượng khoảng $n_r / V(A, r)$ dòng~\cite{silberschatz2019database}.
+Bộ tối ưu hoá chọn kế hoạch bằng cách \textit{ước lượng} chi phí của từng kế hoạch trước khi chạy. Thước đo chính là số trang (khối) phải đọc từ đĩa, trong đó đọc tuần tự nhiều trang liền nhau rẻ hơn đọc cùng số trang đó ở các vị trí rời rạc; ngoài ra còn tính chi phí CPU và bộ nhớ cho các phép sắp xếp, băm. Để ước lượng, hệ quản trị dùng \textit{thống kê} lưu trong danh mục hệ thống: số dòng của bảng, số giá trị khác nhau của mỗi cột, histogram phân bố giá trị. Từ đó nó ước lượng \textit{số dòng} (cardinality) mà mỗi bước tạo ra; ví dụ, với bảng $r$ có $n_r$ dòng và cột $A$ có $V(A, r)$ giá trị khác nhau, nếu giả định các giá trị phân bố đều thì điều kiện $A = a$ được ước lượng khoảng $n_r / V(A, r)$ dòng.
 
 Vì chi phí phụ thuộc vào dữ liệu, \textbf{kế hoạch được chọn cũng phụ thuộc vào dữ liệu}: cùng một câu truy vấn có thể được thực thi theo kế hoạch khác khi số dòng hoặc phân bố dữ liệu thay đổi. Với bảng nhỏ chỉ vài trang, đọc cả bảng có thể rẻ hơn dùng index; với bảng lớn, điều ngược lại xảy ra. Ước lượng chỉ là gần đúng: nếu số dòng ước lượng lệch nhiều so với thực tế, bộ tối ưu hoá có thể chọn sai kế hoạch. Phần thực nghiệm của đề tài kiểm chứng chính hai điều này: kế hoạch thay đổi thế nào khi dữ liệu tăng, và số dòng ước lượng so với thực tế.
 
 \paragraph{Các thuật toán chính.}
-Mỗi loại phép toán có một số thuật toán với chi phí khác nhau; bộ tối ưu hoá chọn giữa chúng~\cite{silberschatz2019database, elmasri2016fundamentals}.
+Mỗi loại phép toán có một số thuật toán với chi phí khác nhau; bộ tối ưu hoá chọn giữa chúng.
 
 \begin{itemize}
     \item \textbf{Phép chọn.} \textit{Quét tuần tự} đọc mọi trang của bảng, chi phí chỉ phụ thuộc kích thước bảng. \textit{Dùng index} tìm thẳng các dòng thoả điều kiện, nhưng nếu index không chứa đủ cột cần lấy thì mỗi dòng tìm được phải đọc thêm từ bảng, nên chi phí tăng theo số dòng thoả điều kiện; index chỉ có lợi khi điều kiện chọn lọc ít dòng. Với \textit{nhiều điều kiện} nối bằng \texttt{AND}, một điều kiện trên cột có index được \textit{dùng để tra index}, các điều kiện còn lại chỉ được \textit{kiểm tra lại} trên từng dòng đọc ra. Khi có \texttt{ORDER BY}, nếu dữ liệu đọc ra đã đúng thứ tự (theo một index) thì không cần sắp xếp, và nếu chỉ cần $N$ dòng đầu thì có thể dừng sớm khi đủ $N$ dòng.
@@ -59,7 +61,7 @@ Mỗi loại phép toán có một số thuật toán với chi phí khác nhau;
 
     \item \textbf{Gom nhóm và hàm tổng hợp.} \textit{Dựa trên sắp xếp}: sắp các dòng theo khoá nhóm rồi cộng dồn lần lượt từng nhóm; nếu dữ liệu đã có thứ tự theo khoá nhóm thì bỏ được bước sắp xếp. \textit{Dựa trên băm}: giữ mỗi nhóm một ô trong bảng băm và cập nhật khi đọc từng dòng; không cần thứ tự nhưng cần bộ nhớ. Cả hai cách đều phải đọc mọi dòng cần tổng hợp, nên chi phí tăng theo số dòng đầu vào.
 
-    \item \textbf{Truy vấn con tương quan.} Truy vấn con dùng giá trị của dòng bên ngoài (ví dụ: nhân viên có lương cao hơn \textit{lương trung bình của phòng ban mình}) nếu làm theo nghĩa đen phải tính lại cho từng dòng bên ngoài. Bộ tối ưu hoá thường \textit{khử tương quan} (decorrelation): viết lại thành phép gom nhóm tính mỗi nhóm một lần rồi kết nối với bảng ngoài~\cite{silberschatz2019database}:
+    \item \textbf{Truy vấn con tương quan.} Truy vấn con dùng giá trị của dòng bên ngoài (ví dụ: nhân viên có lương cao hơn \textit{lương trung bình của phòng ban mình}) nếu làm theo nghĩa đen phải tính lại cho từng dòng bên ngoài. Bộ tối ưu hoá thường \textit{khử tương quan} (decorrelation): viết lại thành phép gom nhóm tính mỗi nhóm một lần rồi kết nối với bảng ngoài:
 \begin{verbatim}
 -- Original query (correlated subquery)
 SELECT e.Name FROM Employee e
@@ -94,17 +96,17 @@ WHERE e.Salary > d.AvgSalary
 \end{table}
 
 \paragraph{Hệ lưu trữ khoá--giá trị.}
-Ở các hệ lưu trữ khoá--giá trị (key--value) như Redis, ứng dụng không gửi câu truy vấn khai báo mà gửi trực tiếp các \textit{lệnh} trên từng khoá; mỗi lệnh có thuật toán và độ phức tạp cố định (ví dụ $O(1)$ hoặc $O(\log N)$). Không có bước dịch hay tối ưu hoá, cũng không có kết nối, truy vấn con hay gom nhóm trên dữ liệu thô: ``kế hoạch thực thi'' chính là chuỗi lệnh do người lập trình viết, được quyết định từ lúc thiết kế cách tổ chức dữ liệu~\cite{carlson2013redis, redisdocs}. Để trả lời nhanh, dữ liệu thường được chuẩn bị sẵn \textit{lúc ghi}: lưu trùng thông tin (phi chuẩn hoá), giữ các cấu trúc phụ đã sắp sẵn thứ tự, cộng dồn sẵn các giá trị tổng hợp. Đây là sự đánh đổi giữa hai hướng: hệ quan hệ linh hoạt, chỉ cần viết câu truy vấn mới, nhưng làm việc lúc đọc; hệ khoá--giá trị đọc rất nhanh, nhưng mỗi câu hỏi phải được thiết kế trước và các cấu trúc phụ phải được ứng dụng cập nhật mỗi khi dữ liệu thay đổi.
+Ở các hệ lưu trữ khoá--giá trị (key--value) như Redis, ứng dụng không gửi câu truy vấn khai báo mà gửi trực tiếp các \textit{lệnh} trên từng khoá; mỗi lệnh có thuật toán và độ phức tạp cố định (ví dụ $O(1)$ hoặc $O(\log N)$). Không có bước dịch hay tối ưu hoá, cũng không có kết nối, truy vấn con hay gom nhóm trên dữ liệu thô: ``kế hoạch thực thi'' chính là chuỗi lệnh do người lập trình viết, được quyết định từ lúc thiết kế cách tổ chức dữ liệu. Để trả lời nhanh, dữ liệu thường được chuẩn bị sẵn \textit{lúc ghi}: lưu trùng thông tin (phi chuẩn hoá), giữ các cấu trúc phụ đã sắp sẵn thứ tự, cộng dồn sẵn các giá trị tổng hợp. Đây là sự đánh đổi giữa hai hướng: hệ quan hệ linh hoạt, chỉ cần viết câu truy vấn mới, nhưng làm việc lúc đọc; hệ khoá--giá trị đọc rất nhanh, nhưng mỗi câu hỏi phải được thiết kế trước và các cấu trúc phụ phải được ứng dụng cập nhật mỗi khi dữ liệu thay đổi.
 
 \subsubsection{Cơ chế xử lý truy vấn trên MS SQL Server}
 
 \paragraph{Kiến trúc tổng quan.}
 Bộ máy cơ sở dữ liệu (Database Engine) của SQL Server gồm hai bộ phận chính tham gia xử lý truy vấn (Hình~\ref{fig:mssql-engines}):
 \begin{itemize}
-    \item \textbf{Relational Engine}: phân tích câu lệnh, chọn kế hoạch thực thi và chạy kế hoạch đó. Các yêu cầu đọc dữ liệu do Relational Engine điều khiển: nó quyết định \textit{cách truy cập} hiệu quả nhất, chẳng hạn quét bảng, quét index hay đọc theo khoá~\cite{mssqldocs}.
-    \item \textbf{Storage Engine}: quản lý các trang dữ liệu và index. Các thành phần \textit{access methods} và \textit{buffer manager} của nó quyết định cách đọc các trang~\cite{mssqldocs}. Vì đọc ghi đĩa là một trong những thao tác tốn kém nhất, SQL Server giữ các trang đã đọc trong một vùng bộ nhớ gọi là \textit{buffer pool} (hay buffer cache)~\cite{mssqldocs}.
+    \item \textbf{Relational Engine}: phân tích câu lệnh, chọn kế hoạch thực thi và chạy kế hoạch đó. Các yêu cầu đọc dữ liệu do Relational Engine điều khiển: nó quyết định \textit{cách truy cập} hiệu quả nhất, chẳng hạn quét bảng, quét index hay đọc theo khoá.
+    \item \textbf{Storage Engine}: quản lý các trang dữ liệu và index. Các thành phần \textit{access methods} và \textit{buffer manager} của nó quyết định cách đọc các trang. Vì đọc ghi đĩa là một trong những thao tác tốn kém nhất, SQL Server giữ các trang đã đọc trong một vùng bộ nhớ gọi là \textit{buffer pool} (hay buffer cache).
 \end{itemize}
-Relational Engine chia mỗi câu lệnh thành các thao tác trên những tập dòng (rowset) mà Storage Engine mở từ các bảng gốc~\cite{msqueryarch}.
+Relational Engine chia mỗi câu lệnh thành các thao tác trên những tập dòng (rowset) mà Storage Engine mở từ các bảng gốc.
 
 \begin{figure}[H]
     \centering
@@ -119,12 +121,12 @@ Relational Engine chia mỗi câu lệnh thành các thao tác trên những t�
         \draw[<->] (re) -- node[right, font=\small] {yêu cầu dòng / trả dòng} (se);
         \draw[<->] (se) -- node[right, font=\small] {đọc trang khi thiếu trong bộ nhớ} (disk);
     \end{tikzpicture}
-    \caption{Hai bộ phận chính của SQL Server Database Engine (tổng hợp từ \cite{msqueryarch, mssqldocs})}
+    \caption{Hai bộ phận chính của SQL Server Database Engine (tổng hợp từ)}
     \label{fig:mssql-engines}
 \end{figure}
 
 \paragraph{Quy trình xử lý một câu lệnh.}
-Quá trình SQL Server xử lý một câu \texttt{SELECT} gồm các bước sau (Hình~\ref{fig:mssql-flow})~\cite{msqueryarch}:
+Quá trình SQL Server xử lý một câu \texttt{SELECT} gồm các bước sau (Hình~\ref{fig:mssql-flow}):
 \begin{enumerate}
     \item \textbf{Tra plan cache}: với mọi câu lệnh, SQL Server trước hết tìm trong bộ nhớ đệm kế hoạch (plan cache) xem đã có kế hoạch thực thi của đúng câu lệnh này chưa. Nếu có, kế hoạch đó được dùng lại và các bước 2--4 được bỏ qua.
     \item \textbf{Phân tích cú pháp} (parser): quét câu lệnh và tách thành các đơn vị logic như từ khoá, biểu thức, toán tử và định danh.
@@ -154,27 +156,27 @@ Quá trình SQL Server xử lý một câu \texttt{SELECT} gồm các bước sa
         \draw[->] (exec) -- (res);
         \draw[->] (cache.east) -- (4.3, -1.5) -- node[right, font=\small, align=left] {đã có:\\dùng lại\\kế hoạch} (4.3, -7.7) -- (exec.east);
     \end{tikzpicture}
-    \caption{Các bước xử lý một câu truy vấn trên SQL Server (tổng hợp từ \cite{msqueryarch})}
+    \caption{Các bước xử lý một câu truy vấn trên SQL Server (tổng hợp từ)}
     \label{fig:mssql-flow}
 \end{figure}
 
 \paragraph{Query Optimizer.}
-Query Optimizer của SQL Server là bộ tối ưu dựa trên chi phí: với mỗi kế hoạch khả dĩ, nó ước lượng lượng tài nguyên cần dùng, dựa vào thống kê về dữ liệu, và chọn kế hoạch có chi phí ước lượng thấp~\cite{msqueryarch}. Một câu lệnh phức tạp có thể có hàng nghìn kế hoạch khả dĩ, nên Optimizer không xét hết mọi tổ hợp mà tìm một kế hoạch có chi phí hợp lý trong thời gian dành cho việc tối ưu; vì vậy kế hoạch được chọn \textit{không nhất thiết} là kế hoạch có chi phí ước lượng thấp nhất~\cite{msqueryarch}.
+Query Optimizer của SQL Server là bộ tối ưu dựa trên chi phí: với mỗi kế hoạch khả dĩ, nó ước lượng lượng tài nguyên cần dùng, dựa vào thống kê về dữ liệu, và chọn kế hoạch có chi phí ước lượng thấp. Một câu lệnh phức tạp có thể có hàng nghìn kế hoạch khả dĩ, nên Optimizer không xét hết mọi tổ hợp mà tìm một kế hoạch có chi phí hợp lý trong thời gian dành cho việc tối ưu; vì vậy kế hoạch được chọn \textit{không nhất thiết} là kế hoạch có chi phí ước lượng thấp nhất.
 
-Vì tối ưu hoá tốn thời gian, kế hoạch được lưu trong plan cache để dùng lại. Một câu lệnh chỉ được coi là trùng với câu đã có kế hoạch nếu giống nhau \textit{từng ký tự}; do đó tách các hằng số ra thành tham số giúp SQL Server nhận ra các câu lệnh trùng nhau và dùng lại kế hoạch~\cite{msqueryarch}. Một kế hoạch đã lưu sẽ bị biên dịch lại khi các thay đổi trong cơ sở dữ liệu làm nó kém hiệu quả hoặc không còn hợp lệ, chẳng hạn khi bảng hoặc index liên quan thay đổi, hoặc khi thống kê mà kế hoạch sử dụng được cập nhật~\cite{msqueryarch}.
+Vì tối ưu hoá tốn thời gian, kế hoạch được lưu trong plan cache để dùng lại. Một câu lệnh chỉ được coi là trùng với câu đã có kế hoạch nếu giống nhau \textit{từng ký tự}; do đó tách các hằng số ra thành tham số giúp SQL Server nhận ra các câu lệnh trùng nhau và dùng lại kế hoạch. Một kế hoạch đã lưu sẽ bị biên dịch lại khi các thay đổi trong cơ sở dữ liệu làm nó kém hiệu quả hoặc không còn hợp lệ, chẳng hạn khi bảng hoặc index liên quan thay đổi, hoặc khi thống kê mà kế hoạch sử dụng được cập nhật.
 
 \paragraph{Kế hoạch thực thi và các toán tử.}
-Kế hoạch thực thi xác định thứ tự truy cập các bảng nguồn, cách lấy dữ liệu từ mỗi bảng, và cách tính toán, lọc, gom nhóm, sắp xếp dữ liệu~\cite{mssqldocs}. Nó là một cây các \textit{toán tử vật lý}: toán tử \textit{logic} mô tả phép toán đại số quan hệ cần làm, còn toán tử \textit{vật lý} là cách thực hiện cụ thể phép toán đó~\cite{msshowplan}. Toán tử ngoài cùng bên trái là gốc; các toán tử hoạt động theo kiểu \textbf{kéo} (pull-based): mỗi toán tử có các phương thức \texttt{Open()}, \texttt{GetRow()} và \texttt{Close()}, toán tử gốc gọi \texttt{GetRow()} ở toán tử con, toán tử con lại gọi xuống con của nó, cho tới khi toán tử lá đọc một dòng từ bộ lưu trữ và trả ngược lên~\cite{msshowplan}. SQL Server cung cấp hai loại kế hoạch để xem:
+Kế hoạch thực thi xác định thứ tự truy cập các bảng nguồn, cách lấy dữ liệu từ mỗi bảng, và cách tính toán, lọc, gom nhóm, sắp xếp dữ liệu. Nó là một cây các \textit{toán tử vật lý}: toán tử \textit{logic} mô tả phép toán đại số quan hệ cần làm, còn toán tử \textit{vật lý} là cách thực hiện cụ thể phép toán đó. Toán tử ngoài cùng bên trái là gốc; các toán tử hoạt động theo kiểu \textbf{kéo} (pull-based): mỗi toán tử có các phương thức \texttt{Open()}, \texttt{GetRow()} và \texttt{Close()}, toán tử gốc gọi \texttt{GetRow()} ở toán tử con, toán tử con lại gọi xuống con của nó, cho tới khi toán tử lá đọc một dòng từ bộ lưu trữ và trả ngược lên. SQL Server cung cấp hai loại kế hoạch để xem:
 \begin{itemize}
-    \item \textbf{Kế hoạch ước lượng} (estimated execution plan): được tạo mà không chạy câu lệnh, không chứa thông tin lúc chạy; trong SQL Server Management Studio, xem bằng mục \textit{Display Estimated Execution Plan} của menu \textit{Query}~\cite{mssqldocs}.
-    \item \textbf{Kế hoạch thực tế} (actual execution plan): được tạo sau khi câu lệnh chạy xong, chứa thông tin lúc chạy như mức dùng tài nguyên và các cảnh báo; xem bằng mục \textit{Include Actual Execution Plan}~\cite{mssqldocs}.
+    \item \textbf{Kế hoạch ước lượng} (estimated execution plan): được tạo mà không chạy câu lệnh, không chứa thông tin lúc chạy; trong SQL Server Management Studio, xem bằng mục \textit{Display Estimated Execution Plan} của menu \textit{Query}.
+    \item \textbf{Kế hoạch thực tế} (actual execution plan): được tạo sau khi câu lệnh chạy xong, chứa thông tin lúc chạy như mức dùng tài nguyên và các cảnh báo; xem bằng mục \textit{Include Actual Execution Plan}.
 \end{itemize}
-Ngoài ra, \texttt{SET STATISTICS XML ON} trả về thông tin thực thi của từng câu lệnh sau khi chạy dưới dạng XML~\cite{mssqldocs}, và \texttt{SET STATISTICS IO ON} cho biết số trang đọc của câu lệnh: \textit{logical reads} là số trang đọc từ bộ nhớ đệm, \textit{physical reads} là số trang đọc từ đĩa~\cite{mssqldocs}.
+Ngoài ra, \texttt{SET STATISTICS XML ON} trả về thông tin thực thi của từng câu lệnh sau khi chạy dưới dạng XML, và \texttt{SET STATISTICS IO ON} cho biết số trang đọc của câu lệnh: \textit{logical reads} là số trang đọc từ bộ nhớ đệm, \textit{physical reads} là số trang đọc từ đĩa.
 
-Khi đọc kế hoạch dạng đồ hoạ, mũi tên đi \textbf{từ phải sang trái}, thể hiện chiều đi của dữ liệu~\cite{msshowplan}. Các toán tử tìm theo index có thuộc tính \textbf{SeekPredicates}, là điều kiện dùng để tra index; ngoài ra có thể có thuộc tính \textbf{Predicate}, là điều kiện được kiểm tra lại trên mọi dòng thoả SeekPredicates mà không dùng index~\cite{msshowplan}. Bảng~\ref{tab:mssql-operators} tóm tắt các toán tử vật lý thường gặp theo mô tả của Microsoft, cùng khái niệm tương ứng trong phần cơ sở lý thuyết.
+Khi đọc kế hoạch dạng đồ hoạ, mũi tên đi \textbf{từ phải sang trái}, thể hiện chiều đi của dữ liệu. Các toán tử tìm theo index có thuộc tính \textbf{SeekPredicates}, là điều kiện dùng để tra index; ngoài ra có thể có thuộc tính \textbf{Predicate}, là điều kiện được kiểm tra lại trên mọi dòng thoả SeekPredicates mà không dùng index. Bảng~\ref{tab:mssql-operators} tóm tắt các toán tử vật lý thường gặp theo mô tả của Microsoft, cùng khái niệm tương ứng trong phần cơ sở lý thuyết.
 
 \begin{longtable}{>{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{8.6cm} >{\raggedright\arraybackslash}p{3.6cm}}
-    \caption{Các toán tử thường gặp trong kế hoạch thực thi của SQL Server (theo \cite{msshowplan})}
+    \caption{Các toán tử thường gặp trong kế hoạch thực thi của SQL Server (theo)}
     \label{tab:mssql-operators} \\
     \toprule
     \textbf{Toán tử} & \textbf{Ý nghĩa} & \textbf{Khái niệm lý thuyết} \\
@@ -210,9 +212,9 @@ Khi đọc kế hoạch dạng đồ hoạ, mũi tên đi \textbf{từ phải sa
 \subsubsection{Cơ chế xử lý lệnh trên Redis}
 
 \paragraph{Kiến trúc tổng quan.}
-Redis là một \textit{máy chủ cấu trúc dữ liệu} (data structure server): cơ sở dữ liệu lưu dữ liệu trong bộ nhớ (RAM), có thể ghi xuống đĩa để lưu bền vững; dữ liệu được phục vụ từ bộ nhớ, còn đĩa chỉ dùng để lưu trữ~\cite{redisdocs}. Mỗi đối tượng dữ liệu có một \textit{khoá} (key) duy nhất; đối tượng gắn với khoá là \textit{giá trị} (value), và hai thứ tạo thành một cặp khoá--giá trị. Redis dùng phép băm để lấy giá trị ứng với một khoá một cách hiệu quả~\cite{redisdocs}.
+Redis là một \textit{máy chủ cấu trúc dữ liệu} (data structure server): cơ sở dữ liệu lưu dữ liệu trong bộ nhớ (RAM), có thể ghi xuống đĩa để lưu bền vững; dữ liệu được phục vụ từ bộ nhớ, còn đĩa chỉ dùng để lưu trữ. Mỗi đối tượng dữ liệu có một \textit{khoá} (key) duy nhất; đối tượng gắn với khoá là \textit{giá trị} (value), và hai thứ tạo thành một cặp khoá--giá trị. Redis dùng phép băm để lấy giá trị ứng với một khoá một cách hiệu quả.
 
-Redis hoạt động theo mô hình client--server (Hình~\ref{fig:redis-arch}): client mở kết nối TCP tới máy chủ Redis (mặc định cổng 6379) và giao tiếp bằng giao thức \textit{RESP} (Redis Serialization Protocol)~\cite{redisdocs}. Redis không có bộ phận chọn cách thực hiện như Query Optimizer của SQL Server: mỗi lệnh được thực thi trực tiếp trên các cấu trúc dữ liệu trong bộ nhớ.
+Redis hoạt động theo mô hình client--server (Hình~\ref{fig:redis-arch}): client mở kết nối TCP tới máy chủ Redis (mặc định cổng 6379) và giao tiếp bằng giao thức \textit{RESP} (Redis Serialization Protocol). Redis không có bộ phận chọn cách thực hiện như Query Optimizer của SQL Server: mỗi lệnh được thực thi trực tiếp trên các cấu trúc dữ liệu trong bộ nhớ.
 
 \begin{figure}[H]
     \centering
@@ -227,12 +229,12 @@ Redis hoạt động theo mô hình client--server (Hình~\ref{fig:redis-arch}):
         \draw[<->] (c2) -- (srv);
         \draw[->, dashed] (srv) -- (disk);
     \end{tikzpicture}
-    \caption{Kiến trúc tổng quan của Redis (tổng hợp từ \cite{redisdocs})}
+    \caption{Kiến trúc tổng quan của Redis (tổng hợp từ)}
     \label{fig:redis-arch}
 \end{figure}
 
 \paragraph{Quy trình xử lý một lệnh.}
-Giao thức của Redis là giao thức \textit{yêu cầu--phản hồi} (request--response): client gửi một lệnh dưới dạng một mảng các chuỗi (tên lệnh và các tham số), máy chủ xử lý lệnh rồi gửi kết quả về cho client~\cite{redisdocs}. Quá trình này gồm ba bước (Hình~\ref{fig:redis-flow}):
+Giao thức của Redis là giao thức \textit{yêu cầu--phản hồi} (request--response): client gửi một lệnh dưới dạng một mảng các chuỗi (tên lệnh và các tham số), máy chủ xử lý lệnh rồi gửi kết quả về cho client. Quá trình này gồm ba bước (Hình~\ref{fig:redis-flow}):
 \begin{enumerate}
     \item \textbf{Nhận lệnh}: máy chủ đọc yêu cầu của client theo giao thức RESP, gồm tên lệnh và các tham số.
     \item \textbf{Thực thi}: máy chủ chạy thuật toán cố định của lệnh đó trên cấu trúc dữ liệu được lưu tại khoá tương ứng trong bộ nhớ.
@@ -240,7 +242,7 @@ Giao thức của Redis là giao thức \textit{yêu cầu--phản hồi} (reque
 \end{enumerate}
 So với SQL Server, quy trình này \textit{không có} bước dịch sang đại số quan hệ, không có bộ tối ưu hoá và không có plan cache: cách thực hiện của mỗi lệnh đã được xác định sẵn bởi chính lệnh đó.
 
-Redis có thiết kế \textit{chủ yếu đơn luồng}: mọi yêu cầu được phục vụ bởi một luồng, mỗi thời điểm chỉ phục vụ một yêu cầu, nên các yêu cầu được xử lý tuần tự; một số thao tác chậm liên quan đến đĩa được đưa sang các luồng nền~\cite{redisdocs}. Hệ quả là khi một lệnh chạy chậm, mọi client khác phải chờ lệnh đó xong. Tài liệu Redis cảnh báo đặc biệt về các lệnh duyệt toàn bộ như \texttt{KEYS}, vốn chặn máy chủ cho tới khi trả về hết các khoá~\cite{redisdocs}.
+Redis có thiết kế \textit{chủ yếu đơn luồng}: mọi yêu cầu được phục vụ bởi một luồng, mỗi thời điểm chỉ phục vụ một yêu cầu, nên các yêu cầu được xử lý tuần tự; một số thao tác chậm liên quan đến đĩa được đưa sang các luồng nền. Hệ quả là khi một lệnh chạy chậm, mọi client khác phải chờ lệnh đó xong. Tài liệu Redis cảnh báo đặc biệt về các lệnh duyệt toàn bộ như \texttt{KEYS}, vốn chặn máy chủ cho tới khi trả về hết các khoá.
 
 \begin{figure}[H]
     \centering
@@ -256,12 +258,12 @@ Redis có thiết kế \textit{chủ yếu đơn luồng}: mọi yêu cầu đư
         \draw[->] (exec) -- (res);
         \node[font=\small, align=left, anchor=west] at (3.6, -2.25) {Các lệnh từ mọi client\\được thực thi lần lượt,\\từng lệnh một};
     \end{tikzpicture}
-    \caption{Các bước xử lý một lệnh trên Redis (tổng hợp từ \cite{redisdocs})}
+    \caption{Các bước xử lý một lệnh trên Redis (tổng hợp từ)}
     \label{fig:redis-flow}
 \end{figure}
 
 \paragraph{Kiểu dữ liệu và độ phức tạp của lệnh.}
-Giá trị trong Redis có thể là các cấu trúc dữ liệu khác nhau; các kiểu cơ bản gồm~\cite{redisdocs}:
+Giá trị trong Redis có thể là các cấu trúc dữ liệu khác nhau; các kiểu cơ bản gồm:
 \begin{itemize}
     \item \textbf{String}: kiểu cơ bản nhất, một dãy byte.
     \item \textbf{Hash}: bản ghi gồm các cặp trường--giá trị.
@@ -270,11 +272,11 @@ Giá trị trong Redis có thể là các cấu trúc dữ liệu khác nhau; c�
     \item \textbf{Sorted Set}: tập các chuỗi không trùng lặp, luôn được giữ theo thứ tự của một \textit{điểm số} (score) gắn với mỗi phần tử. Sorted Set được cài đặt bằng một skip list kết hợp với một bảng băm, nên mỗi lần thêm phần tử tốn $O(\log N)$, và khi đọc theo thứ tự thì dữ liệu đã được sắp sẵn.
 \end{itemize}
 
-Redis không ước lượng chi phí như SQL Server; thay vào đó, \textit{độ phức tạp thuật toán của mọi lệnh đều được ghi trong tài liệu}~\cite{redisdocs}. Bảng~\ref{tab:redis-complexity} liệt kê một số lệnh tiêu biểu. Người lập trình biết trước chi phí của mỗi lệnh và chọn lệnh, cấu trúc dữ liệu phù hợp; đây là vai trò mà bộ tối ưu hoá đảm nhận trong hệ quản trị quan hệ.
+Redis không ước lượng chi phí như SQL Server; thay vào đó, \textit{độ phức tạp thuật toán của mọi lệnh đều được ghi trong tài liệu}. Bảng~\ref{tab:redis-complexity} liệt kê một số lệnh tiêu biểu. Người lập trình biết trước chi phí của mỗi lệnh và chọn lệnh, cấu trúc dữ liệu phù hợp; đây là vai trò mà bộ tối ưu hoá đảm nhận trong hệ quản trị quan hệ.
 
 \begin{table}[H]
     \centering
-    \caption{Độ phức tạp của một số lệnh Redis (theo \cite{redisdocs})}
+    \caption{Độ phức tạp của một số lệnh Redis (theo)}
     \label{tab:redis-complexity}
     \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.4cm} X}
         \toprule
@@ -291,13 +293,13 @@ Redis không ước lượng chi phí như SQL Server; thay vào đó, \textit{�
 \end{table}
 
 \paragraph{Đường truy cập do người lập trình thiết kế.}
-Về bản chất, Redis chỉ cung cấp truy cập theo \textit{khoá chính}: muốn lấy một giá trị thì phải biết khoá của nó~\cite{redisdocs}. Các lệnh cốt lõi của Redis không có index phụ tự động, cũng không có phép kết nối hay gom nhóm như SQL; mọi ``đường truy cập'' khác phải do ứng dụng tự xây dựng bằng chính các cấu trúc dữ liệu của Redis:
+Về bản chất, Redis chỉ cung cấp truy cập theo \textit{khoá chính}: muốn lấy một giá trị thì phải biết khoá của nó. Các lệnh cốt lõi của Redis không có index phụ tự động, cũng không có phép kết nối hay gom nhóm như SQL; mọi ``đường truy cập'' khác phải do ứng dụng tự xây dựng bằng chính các cấu trúc dữ liệu của Redis:
 \begin{itemize}
-    \item \textbf{Index phụ thủ công}: dùng Sorted Set làm index cho các giá trị số (thêm bằng \texttt{ZADD}, truy vấn theo khoảng bằng \texttt{ZRANGE} với tham số \texttt{BYSCORE}), hoặc dùng Set, List cho các kiểu index khác~\cite{redisdocs}. Ứng dụng phải tự cập nhật các index này mỗi khi dữ liệu thay đổi; tài liệu Redis lưu ý đây là chủ đề phức tạp, và các ứng dụng cần truy vấn phức tạp nên cân nhắc dùng cơ sở dữ liệu quan hệ~\cite{redisdocs}.
+    \item \textbf{Index phụ thủ công}: dùng Sorted Set làm index cho các giá trị số (thêm bằng \texttt{ZADD}, truy vấn theo khoảng bằng \texttt{ZRANGE} với tham số \texttt{BYSCORE}), hoặc dùng Set, List cho các kiểu index khác. Ứng dụng phải tự cập nhật các index này mỗi khi dữ liệu thay đổi; tài liệu Redis lưu ý đây là chủ đề phức tạp, và các ứng dụng cần truy vấn phức tạp nên cân nhắc dùng cơ sở dữ liệu quan hệ.
     \item \textbf{Chuẩn bị dữ liệu sẵn lúc ghi}: vì không có phép kết nối hay gom nhóm, các thông tin cần đọc cùng nhau thường được lưu trùng, và các giá trị tổng hợp được ứng dụng tính và cập nhật sẵn khi ghi, thay vì tính lúc đọc.
-    \item \textbf{Gom nhiều lệnh}: \textit{pipelining} cho phép client gửi nhiều lệnh cùng lúc rồi mới nhận các kết quả, giảm số lượt đi--về qua mạng~\cite{redisdocs}. \textit{Script Lua} (lệnh \texttt{EVAL}) chạy một chuỗi lệnh ngay trên máy chủ, gần dữ liệu (\textit{data locality}), giúp giảm lưu lượng mạng; Redis đảm bảo script được thực thi nguyên khối (atomic), và trong lúc script chạy, các client khác bị chặn~\cite{redisdocs}.
+    \item \textbf{Gom nhiều lệnh}: \textit{pipelining} cho phép client gửi nhiều lệnh cùng lúc rồi mới nhận các kết quả, giảm số lượt đi--về qua mạng. \textit{Script Lua} (lệnh \texttt{EVAL}) chạy một chuỗi lệnh ngay trên máy chủ, gần dữ liệu (\textit{data locality}), giúp giảm lưu lượng mạng; Redis đảm bảo script được thực thi nguyên khối (atomic), và trong lúc script chạy, các client khác bị chặn.
 \end{itemize}
-Ngoài ra, mô-đun \textit{Redis Search} (có trong Redis Stack) bổ sung khả năng đánh index và truy vấn trên các khoá Hash hoặc JSON bằng các lệnh \texttt{FT.CREATE}, \texttt{FT.SEARCH}, \texttt{FT.AGGREGATE}~\cite{redisdocs}. Tuy nhiên, với các lệnh cốt lõi của Redis, cách trả lời mỗi câu hỏi vẫn là chuỗi lệnh do người lập trình chọn từ trước, tương ứng với \textit{kế hoạch thực thi} mà bộ tối ưu hoá của SQL Server tự tạo ra.
+Ngoài ra, mô-đun \textit{Redis Search} (có trong Redis Stack) bổ sung khả năng đánh index và truy vấn trên các khoá Hash hoặc JSON bằng các lệnh \texttt{FT.CREATE}, \texttt{FT.SEARCH}, \texttt{FT.AGGREGATE}. Tuy nhiên, với các lệnh cốt lõi của Redis, cách trả lời mỗi câu hỏi vẫn là chuỗi lệnh do người lập trình chọn từ trước, tương ứng với \textit{kế hoạch thực thi} mà bộ tối ưu hoá của SQL Server tự tạo ra.
 
 \subsubsection{Thiết kế kịch bản thực nghiệm}
 

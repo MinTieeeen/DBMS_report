@@ -1,10 +1,12 @@
 \section{Thiết kế kiến trúc và triển khai ứng dụng}
 \label{sec:architecture-implementation}
 
+Sau khi đã thiết kế dữ liệu ở Chương~\ref{sec:app-db-design} và rút ra các kết luận về hai hệ quản trị ở Chương~\ref{sec:dbms-topics}, chương này trình bày cách nhóm hiện thực ứng dụng Novelle. Nội dung đi từ các công nghệ được sử dụng, kiến trúc tổng thể và cách tổ chức mã nguồn, cho đến quá trình hiện thực từng module chức năng cùng các câu truy vấn tiêu biểu trên SQL Server và Redis.
+
 \subsection{Tổng quan công nghệ sử dụng}
 \label{subsec:tech-stack}
 
-Novelle được xây dựng theo mô hình client--server gồm ba phần: ứng dụng web phía client, dịch vụ backend cung cấp REST API, và tầng dữ liệu gồm hai hệ quản trị cơ sở dữ liệu. Bảng~\ref{tab:tech-stack} liệt kê các công nghệ cốt lõi của từng phần.
+Như đã giới thiệu, Novelle được xây dựng theo mô hình client--server và gồm ba phần chính: ứng dụng web phía client, dịch vụ backend cung cấp REST API, và tầng dữ liệu gồm hai hệ quản trị cơ sở dữ liệu. Với mỗi phần, nhóm ưu tiên lựa chọn những công nghệ phổ biến, có tài liệu đầy đủ và phù hợp với kinh nghiệm của các thành viên. Bảng~\ref{tab:tech-stack} liệt kê các công nghệ cốt lõi được sử dụng trong từng phần.
 
 \begin{table}[H]
 \centering
@@ -136,19 +138,19 @@ Quản trị & F11, F12, F13 & \texttt{/api/admin/**} & Tất cả các bảng \
 \end{longtable}
 }
 
-\paragraph{Module Nền tảng.} Cung cấp các cơ chế dùng chung cho mọi module khác: lưu phiên đăng nhập trên Redis, kiểm tra trạng thái tài khoản ở mỗi yêu cầu, phân quyền theo vai trò, giới hạn tần suất các thao tác nhạy cảm, mô hình lỗi thống nhất cho toàn bộ API và bộ nhớ đệm dùng chung. Ở frontend, module này gồm HTTP client, cơ chế lưu trữ trạng thái dữ liệu từ server và bộ chặn truy cập theo vai trò.
+\paragraph{Module Nền tảng.} Đây là module nền móng, cung cấp các cơ chế dùng chung cho mọi module khác: lưu phiên đăng nhập trên Redis, kiểm tra trạng thái tài khoản ở mỗi yêu cầu, phân quyền theo vai trò, giới hạn tần suất các thao tác nhạy cảm, mô hình lỗi thống nhất cho toàn bộ API và bộ nhớ đệm dùng chung. Ở frontend, module này gồm HTTP client, cơ chế lưu trữ trạng thái dữ liệu từ server và bộ chặn truy cập theo vai trò.
 
-\paragraph{Module Tài khoản.} Chịu trách nhiệm đăng ký tài khoản (mặc định là người đọc), đăng nhập bằng tên đăng nhập hoặc email, đăng xuất, xem và sửa hồ sơ cá nhân, đổi mật khẩu và hiển thị hồ sơ công khai. Mật khẩu được băm bằng BCrypt; việc sửa hồ sơ dùng khoá lạc quan để phát hiện chỉnh sửa đồng thời. Khi vai trò của người dùng thay đổi (được duyệt làm tác giả) hoặc tài khoản bị khoá, thay đổi có hiệu lực ngay ở yêu cầu kế tiếp.
+\paragraph{Module Tài khoản.} Module này chịu trách nhiệm đăng ký tài khoản (mặc định là người đọc), đăng nhập bằng tên đăng nhập hoặc email, đăng xuất, xem và sửa hồ sơ cá nhân, đổi mật khẩu và hiển thị hồ sơ công khai. Mật khẩu được băm bằng BCrypt; việc sửa hồ sơ dùng khoá lạc quan để phát hiện chỉnh sửa đồng thời. Khi vai trò của người dùng thay đổi (được duyệt làm tác giả) hoặc tài khoản bị khoá, thay đổi có hiệu lực ngay ở yêu cầu kế tiếp.
 
-\paragraph{Module Danh mục \& truyện.} Phục vụ toàn bộ phần đọc công khai: trang chủ với các danh sách truyện, danh sách thể loại và gợi ý thẻ, tìm kiếm toàn văn kết hợp bộ lọc nhiều điều kiện, trang chi tiết truyện kèm mục lục theo tập, và trang tác giả. Module này chỉ đọc dữ liệu, luôn ẩn truyện chưa công khai và chương chưa đăng, và dùng bộ nhớ đệm Redis cho trang chủ, danh sách thể loại và chi tiết truyện.
+\paragraph{Module Danh mục \& truyện.} Module này phục vụ toàn bộ phần đọc công khai, bao gồm trang chủ với các danh sách truyện, danh sách thể loại và gợi ý thẻ, tìm kiếm toàn văn kết hợp bộ lọc nhiều điều kiện, trang chi tiết truyện kèm mục lục theo tập, và trang tác giả. Module này chỉ đọc dữ liệu, luôn ẩn truyện chưa công khai và chương chưa đăng, và dùng bộ nhớ đệm Redis cho trang chủ, danh sách thể loại và chi tiết truyện.
 
-\paragraph{Module Đọc truyện.} Trả nội dung chương cùng liên kết chương trước và chương sau, ghi nhận lượt xem và lưu vị trí đọc của người dùng. Lượt xem được đếm trên Redis, chống tính trùng trong 30 phút, rồi được tác vụ định kỳ đồng bộ xuống SQL Server mỗi 60 giây. Nội dung chương đã đăng được lưu đệm trên Redis.
+\paragraph{Module Đọc truyện.} Khi người dùng mở một chương, module này trả về nội dung chương cùng liên kết chương trước và chương sau, ghi nhận lượt xem và lưu vị trí đọc của người dùng. Lượt xem được đếm trên Redis, chống tính trùng trong 30 phút, rồi được tác vụ định kỳ đồng bộ xuống SQL Server mỗi 60 giây. Nội dung chương đã đăng được lưu đệm trên Redis.
 
-\paragraph{Module Thư viện \& đánh giá.} Quản lý các hoạt động cá nhân của người đọc: lịch sử đọc, theo dõi truyện và tác giả, tủ truyện (tạo, sửa, xoá, thêm truyện, sắp xếp thứ tự) và đánh giá truyện. Các số liệu tổng hợp như lượt theo dõi và điểm trung bình được trigger trên SQL Server cập nhật; sau mỗi thao tác ghi, module xoá bộ nhớ đệm của truyện liên quan.
+\paragraph{Module Thư viện \& đánh giá.} Module này quản lý các hoạt động cá nhân của người đọc, gồm lịch sử đọc, theo dõi truyện và tác giả, tủ truyện (tạo, sửa, xoá, thêm truyện, sắp xếp thứ tự) và đánh giá truyện. Các số liệu tổng hợp như lượt theo dõi và điểm trung bình được trigger trên SQL Server cập nhật; sau mỗi thao tác ghi, module xoá bộ nhớ đệm của truyện liên quan.
 
-\paragraph{Module Yêu cầu tác giả.} Cho phép người đọc gửi, theo dõi và huỷ yêu cầu trở thành tác giả, và cho phép quản trị viên xem hàng đợi, duyệt hoặc từ chối yêu cầu. Việc duyệt được thực hiện trong một thủ tục lưu trữ: đổi trạng thái yêu cầu, đổi vai trò tài khoản và tạo hồ sơ tác giả trong cùng một giao dịch, đồng thời bảo đảm mỗi yêu cầu chỉ được xử lý một lần kể cả khi hai quản trị viên thao tác cùng lúc.
+\paragraph{Module Yêu cầu tác giả.} Module này cho phép người đọc gửi, theo dõi và huỷ yêu cầu trở thành tác giả, và cho phép quản trị viên xem hàng đợi, duyệt hoặc từ chối yêu cầu. Việc duyệt được thực hiện trong một thủ tục lưu trữ: đổi trạng thái yêu cầu, đổi vai trò tài khoản và tạo hồ sơ tác giả trong cùng một giao dịch, đồng thời bảo đảm mỗi yêu cầu chỉ được xử lý một lần kể cả khi hai quản trị viên thao tác cùng lúc.
 
-\paragraph{Module Studio sáng tác.} Khu vực làm việc của tác giả, gồm ba phần:
+\paragraph{Module Studio sáng tác.} Đây là khu vực làm việc dành riêng cho tác giả, được chia thành ba phần:
 \begin{itemize}
     \item \textbf{Quản lý truyện:} tạo, sửa, công khai, chuyển về bản nháp, xoá truyện; gán thể loại, thẻ; cập nhật hồ sơ tác giả.
     \item \textbf{Viết chương:} quản lý tập và chương, tự động lưu bản nháp lên Redis, lưu chương với khoá lạc quan, đăng ngay hoặc hẹn giờ đăng, xem và khôi phục các phiên bản cũ.
@@ -156,7 +158,7 @@ Quản trị & F11, F12, F13 & \texttt{/api/admin/**} & Tất cả các bảng \
 \end{itemize}
 Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập.
 
-\paragraph{Module Quản trị.} Dành cho quản trị viên, gồm quản lý người dùng (tìm kiếm, khoá, mở khoá, tạo quản trị viên, cấp dấu xác minh), kiểm duyệt nội dung (ẩn, hiện, xoá truyện; xoá nhận xét vi phạm), quản lý thể loại và thẻ, và thống kê toàn hệ thống. Các truy vấn thống kê dùng nhiều phép tổng hợp và truy vấn con, kết quả được lưu đệm ngắn hạn trên Redis.
+\paragraph{Module Quản trị.} Module cuối cùng dành cho quản trị viên, bao gồm quản lý người dùng (tìm kiếm, khoá, mở khoá, tạo quản trị viên, cấp dấu xác minh), kiểm duyệt nội dung (ẩn, hiện, xoá truyện; xoá nhận xét vi phạm), quản lý thể loại và thẻ, và thống kê toàn hệ thống. Các truy vấn thống kê dùng nhiều phép tổng hợp và truy vấn con, kết quả được lưu đệm ngắn hạn trên Redis.
 
 \subsection{Hiện thực ứng dụng}
 \label{subsec:implementation}
@@ -242,11 +244,13 @@ Các script trong \texttt{schema/} đều có thể chạy lại nhiều lần: 
 \subsection{Hiện thực các chức năng của hệ thống}
 \label{subsec:features}
 
+Phần này đi sâu vào cách hiện thực từng module nghiệp vụ. Với mỗi module, nhóm lần lượt mô tả chức năng, trình bày luồng xử lý bằng sơ đồ tuần tự và trích dẫn các câu truy vấn tiêu biểu, qua đó cho thấy cách SQL Server và Redis phối hợp với nhau trong từng chức năng cụ thể.
+
 % -------------------------------------------------------------------
 \subsubsection{Module Danh mục \& truyện}
 \label{subsubsec:feature-catalog}
 
-\paragraph{Mô tả chức năng.} Module phục vụ toàn bộ phần khám phá truyện công khai, gồm các yêu cầu chức năng nhóm FR-2 và FR-3:
+\paragraph{Mô tả chức năng.} Module này phục vụ toàn bộ phần khám phá truyện công khai, gồm các yêu cầu chức năng nhóm FR-2 và FR-3:
 \begin{itemize}
     \item \textbf{Trang chủ:} năm danh sách truyện, mỗi danh sách tối đa 12 truyện: mới cập nhật, mới đăng, đánh giá cao (chỉ xét truyện có từ 10 lượt đánh giá), xem nhiều và đã hoàn thành.
     \item \textbf{Danh mục:} danh sách thể loại kèm số truyện công khai của từng thể loại, và gợi ý thẻ theo tiền tố khi người dùng gõ.
@@ -398,7 +402,7 @@ WHERE a.UserId = @authorId;
 \subsubsection{Module Đọc truyện}
 \label{subsubsec:feature-reading}
 
-\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-4:
+\paragraph{Mô tả chức năng.} Module này hiện thực nhóm yêu cầu FR-4, cụ thể như sau:
 \begin{itemize}
     \item \textbf{Đọc chương:} trả về tên chương, nội dung, số chữ, ngày đăng, lượt xem, thông tin truyện, tập (nếu có) và mã của chương liền trước, liền sau trong số các chương đã đăng. Chương nháp, chương hẹn giờ, chương đã xoá hoặc thuộc truyện không công khai đều trả về cùng một lỗi \texttt{404}.
     \item \textbf{Ghi nhận lượt xem:} mỗi lần đọc thành công tăng một lượt xem cho chương và cho truyện theo ngày (giờ Việt Nam). Một người xem (theo tài khoản, hoặc theo địa chỉ IP nếu chưa đăng nhập) chỉ được tính một lượt cho mỗi chương trong 30 phút.
@@ -525,7 +529,7 @@ WHEN NOT MATCHED THEN
 \subsubsection{Module Thư viện \& đánh giá}
 \label{subsubsec:feature-library}
 
-\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-5 và FR-6, gồm các hoạt động cá nhân của người đọc:
+\paragraph{Mô tả chức năng.} Module này hiện thực nhóm yêu cầu FR-5 và FR-6, gồm các hoạt động cá nhân của người đọc:
 \begin{itemize}
     \item \textbf{Lịch sử đọc:} danh sách truyện đã đọc, mới đọc trước, kèm chương đọc gần nhất và vị trí cuộn; người dùng có thể xoá từng truyện khỏi lịch sử.
     \item \textbf{Theo dõi truyện và tác giả:} theo dõi hoặc bỏ theo dõi, xem trạng thái theo dõi, xem danh sách truyện đang theo dõi (sắp theo chương mới nhất) và tác giả đang theo dõi. Tác giả không được tự theo dõi chính mình.
@@ -668,7 +672,7 @@ GROUP BY r.Score;
 \subsubsection{Module Yêu cầu tác giả}
 \label{subsubsec:feature-author-request}
 
-\paragraph{Mô tả chức năng.} Module hiện thực nhóm yêu cầu FR-7 và phần duyệt tác giả của FR-11.3:
+\paragraph{Mô tả chức năng.} Module này hiện thực nhóm yêu cầu FR-7 và phần duyệt tác giả của FR-11.3:
 \begin{itemize}
     \item \textbf{Gửi yêu cầu:} người đọc đang hoạt động gửi bút danh đề xuất và lời giới thiệu; yêu cầu mới có trạng thái \texttt{PENDING}. Mỗi người chỉ có tối đa một yêu cầu đang chờ, và bút danh không được trùng với tác giả đã có. Tác giả và quản trị viên không được gửi yêu cầu.
     \item \textbf{Theo dõi và huỷ yêu cầu:} người gửi xem lại toàn bộ yêu cầu của mình kèm trạng thái, ghi chú phản hồi và thời điểm xét duyệt; yêu cầu đang chờ có thể được huỷ (trạng thái \texttt{CANCELLED}).
@@ -808,7 +812,7 @@ Thủ tục được bọc trong \texttt{BEGIN TRY \ldots{} END TRY} với \text
 \subsubsection{Module Studio sáng tác}
 \label{subsubsec:feature-studio}
 
-\paragraph{Mô tả chức năng.} Module là khu vực làm việc của tác giả, hiện thực các nhóm yêu cầu FR-8, FR-9 và FR-10. Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập; truyện hoặc chương của người khác đều được trả về như không tồn tại.
+\paragraph{Mô tả chức năng.} Module này là khu vực làm việc của tác giả, hiện thực các nhóm yêu cầu FR-8, FR-9 và FR-10. Mọi thao tác chỉ áp dụng trên truyện của chính tác giả đang đăng nhập; truyện hoặc chương của người khác đều được trả về như không tồn tại.
 \begin{itemize}
     \item \textbf{Quản lý truyện:} danh sách truyện của tôi lọc theo trạng thái; tạo truyện mới ở trạng thái bản nháp với slug sinh tự động từ tên truyện; sửa thông tin, thay thể loại (1--3, đúng một thể loại chính) và thẻ (tối đa 10); công khai truyện khi đã có ít nhất một chương đăng, chuyển về bản nháp hoặc xoá mềm truyện; cập nhật hồ sơ tác giả.
     \item \textbf{Viết chương:} tạo, đổi tên, xoá tập (chỉ khi tập không còn chương); tạo chương với số thứ tự tự tăng; tự động lưu bản nháp lên Redis trong lúc soạn; lưu chương; đăng ngay hoặc hẹn giờ đăng; xoá chương.
@@ -1011,7 +1015,7 @@ ORDER BY s.ViewCount DESC, s.StoryId;
 \subsubsection{Module Quản trị}
 \label{subsubsec:feature-admin}
 
-\paragraph{Mô tả chức năng.} Module dành riêng cho quản trị viên, hiện thực các nhóm yêu cầu FR-11, FR-12 và FR-13 (phần duyệt yêu cầu tác giả đã trình bày ở mục~\ref{subsubsec:feature-author-request}):
+\paragraph{Mô tả chức năng.} Module này dành riêng cho quản trị viên, hiện thực các nhóm yêu cầu FR-11, FR-12 và FR-13 (phần duyệt yêu cầu tác giả đã trình bày ở mục~\ref{subsubsec:feature-author-request}):
 \begin{itemize}
     \item \textbf{Quản lý người dùng:} tìm kiếm và lọc người dùng theo vai trò, trạng thái, từ khoá (tên đăng nhập, email, tên hiển thị) và khoảng ngày đăng ký; xem chi tiết tài khoản kèm hồ sơ tác giả và số yêu cầu tác giả theo trạng thái; khoá tài khoản kèm lý do bắt buộc và mở khoá; tạo tài khoản quản trị viên mới; cấp hoặc thu hồi dấu xác minh tác giả. Tài khoản quản trị viên không thể bị khoá, và người bị khoá bị đăng xuất ngay ở yêu cầu kế tiếp.
     \item \textbf{Kiểm duyệt nội dung:} xem mọi truyện chưa xoá (kể cả bản nháp và truyện bị ẩn), lọc theo trạng thái, tác giả, tên truyện; ẩn truyện đang công khai kèm lý do, hiện lại truyện đã ẩn; xoá mềm truyện của bất kỳ tác giả nào; xoá nhận xét vi phạm.
