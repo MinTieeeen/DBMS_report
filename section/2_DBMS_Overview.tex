@@ -1,63 +1,73 @@
 \section{Tổng quan về hệ quản trị cơ sở dữ liệu}
 \label{sec:dbms-overview}
 
-Trước khi đi vào thiết kế ứng dụng và các chủ đề nghiên cứu chi tiết, chương này giới thiệu một cách tổng quan về hai hệ quản trị được sử dụng trong đề tài là Microsoft SQL Server và Redis. Với mỗi hệ quản trị, nhóm trình bày mô hình dữ liệu, cách truy xuất, cách lưu trữ và vai trò của nó trong ứng dụng Novelle; phần cuối chương đặt hai hệ quản trị cạnh nhau để làm rõ những điểm khác biệt cơ bản.
+Trước khi đi vào thiết kế ứng dụng và các chủ đề nghiên cứu chi tiết, chương này giới thiệu một cách tổng quan về hai hệ quản trị được sử dụng trong đề tài là Microsoft SQL Server và Redis. Với mỗi hệ quản trị, nhóm giới thiệu sơ lược về nguồn gốc, những đặc điểm nổi bật và các lĩnh vực ứng dụng phổ biến; phần cuối chương đặt hai hệ quản trị cạnh nhau để thấy rõ sự khác biệt trong cách tiếp cận của mỗi bên.
 
 \subsection{Tổng quan về Microsoft SQL Server}
 \label{subsec:mssql-overview}
 
-Microsoft SQL Server là hệ quản trị cơ sở dữ liệu quan hệ do Microsoft phát triển. Thành phần cốt lõi của hệ thống là \textit{Database Engine}, chịu trách nhiệm lưu trữ, xử lý và bảo vệ dữ liệu. Các ứng dụng giao tiếp với SQL Server thông qua Transact-SQL (T-SQL), một phần mở rộng của ngôn ngữ SQL, để định nghĩa cấu trúc dữ liệu, truy vấn và cập nhật dữ liệu.
+Microsoft SQL Server là hệ quản trị cơ sở dữ liệu quan hệ do Microsoft phát triển, với phiên bản đầu tiên ra đời từ cuối những năm 1980. Trải qua hơn ba mươi năm phát triển, SQL Server đã trở thành một trong những hệ quản trị cơ sở dữ liệu phổ biến nhất trong môi trường doanh nghiệp, bên cạnh Oracle, MySQL và PostgreSQL. Ban đầu SQL Server chỉ chạy trên hệ điều hành Windows, nhưng hiện nay đã có thể chạy trên cả Linux, trong container và dưới dạng dịch vụ đám mây. Microsoft cung cấp nhiều phiên bản khác nhau, từ phiên bản Express miễn phí dành cho học tập và các ứng dụng nhỏ, đến các phiên bản Standard và Enterprise dành cho những hệ thống có quy mô lớn.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.3\textwidth]{image/chapter2/sql-server.png}
     \caption{Microsoft SQL Server}
-    \label{fig:component-diagram}
+    \label{fig:sql-server-logo}
 \end{figure}
 
-\subsubsection{Mô hình dữ liệu và truy vấn}
+\subsubsection{Đặc điểm nổi bật}
 
-Trong SQL Server, dữ liệu được tổ chức thành các bảng gồm nhiều hàng và nhiều cột, trong đó mỗi cột có một kiểu dữ liệu xác định. Mỗi hàng được định danh bằng khoá chính, còn mối liên hệ giữa các bảng được biểu diễn bằng khoá ngoại. Bên cạnh đó, các ràng buộc như \texttt{PRIMARY KEY}, \texttt{FOREIGN KEY}, \texttt{UNIQUE} và \texttt{CHECK} giúp hệ quản trị tự động ngăn chặn những dữ liệu không hợp lệ. Chẳng hạn, trong Novelle, thông tin truyện và chương được lưu ở hai bảng có quan hệ với nhau, nhờ đó hệ thống vừa dễ dàng lấy ra các chương của một truyện, vừa bảo đảm rằng không có chương nào thuộc về một truyện không tồn tại.
+Là một hệ quản trị cơ sở dữ liệu quan hệ, SQL Server tổ chức dữ liệu thành các bảng có cấu trúc rõ ràng và liên kết với nhau thông qua các mối quan hệ. Người dùng làm việc với dữ liệu bằng ngôn ngữ SQL, một ngôn ngữ mang tính khai báo: chỉ cần mô tả dữ liệu mình muốn lấy, còn việc tìm ra cách lấy hiệu quả nhất do hệ quản trị tự đảm nhận. Nhờ vậy, những yêu cầu phức tạp như kết hợp thông tin từ nhiều bảng hay thống kê, tổng hợp số liệu đều có thể được thực hiện một cách linh hoạt.
 
-Để lấy dữ liệu, người dùng chỉ cần mô tả \emph{dữ liệu cần lấy} bằng các phép lọc, nối bảng, sắp xếp và tổng hợp, còn việc \emph{lấy như thế nào} do bộ tối ưu truy vấn quyết định. Bộ tối ưu này dựa trên các chỉ mục hiện có và thông tin thống kê về dữ liệu để chọn ra kế hoạch thực thi phù hợp nhất. Tuy chỉ mục giúp nhiều truy vấn chạy nhanh hơn, chúng cũng chiếm thêm dung lượng và phải được cập nhật mỗi khi dữ liệu thay đổi, vì vậy cần được thiết kế có chọn lọc.
+Một đặc điểm quan trọng khác của SQL Server là khả năng bảo đảm \textbf{tính toàn vẹn} của dữ liệu. Hệ quản trị cho phép định nghĩa các quy tắc mà dữ liệu bắt buộc phải tuân theo và tự động từ chối những thay đổi vi phạm các quy tắc đó. Bên cạnh đó, SQL Server hỗ trợ đầy đủ các tính chất \textbf{ACID} của giao tác, nhờ đó một nhóm thao tác luôn được thực hiện trọn vẹn hoặc không được thực hiện gì cả, kể cả khi có lỗi hay có nhiều người dùng cùng thao tác. Dữ liệu được lưu bền vững trên đĩa và có thể được sao lưu, khôi phục khi gặp sự cố. Ngoài ra, SQL Server còn đi kèm một hệ sinh thái công cụ phong phú hỗ trợ quản trị, phân tích dữ liệu và lập báo cáo.
 
-\subsubsection{Lưu trữ, giao tác và phục hồi}
+\subsubsection{Ứng dụng}
 
-SQL Server lưu dữ liệu trong các tệp trên đĩa và sử dụng một vùng đệm trong bộ nhớ để hạn chế số lần phải đọc ghi đĩa. Mọi thay đổi đều được ghi vào nhật ký giao tác (\emph{transaction log}) trước, nhờ đó hệ thống có thể huỷ bỏ những thay đổi dở dang hoặc khôi phục lại dữ liệu sau sự cố. Khi nhiều yêu cầu cùng truy cập một dữ liệu, SQL Server kết hợp giao tác với cơ chế khoá và phiên bản dòng để giữ cho dữ liệu luôn nhất quán. Ngoài ra, hệ thống còn hỗ trợ nhiều chiến lược sao lưu và phục hồi khác nhau; các cơ chế này sẽ được phân tích kỹ hơn trong Chương~\ref{sec:dbms-topics}.
+Với những đặc điểm trên, SQL Server thường được lựa chọn cho các hệ thống mà dữ liệu cần chính xác tuyệt đối và được lưu trữ lâu dài, chẳng hạn như hệ thống ngân hàng, kế toán, quản lý bán hàng, quản lý nhân sự hay các hệ thống hoạch định nguồn lực doanh nghiệp (ERP). Hệ quản trị này cũng thường được dùng làm nền tảng cho các kho dữ liệu và hệ thống báo cáo, phân tích kinh doanh. Nhìn chung, SQL Server phù hợp với những ứng dụng có dữ liệu nhiều quan hệ chặt chẽ và có nhu cầu truy vấn đa dạng.
 
 \subsection{Tổng quan về Redis}
 \label{subsec:redis-overview}
 
-Redis là một hệ thống lưu trữ dữ liệu theo mô hình khoá -- giá trị (\emph{key--value}) và chủ yếu làm việc với dữ liệu trong bộ nhớ chính. Mỗi key được gắn với một giá trị thuộc một cấu trúc dữ liệu cụ thể, và ứng dụng thao tác với dữ liệu thông qua các lệnh của Redis. Thay vì thiết kế bảng theo các thực thể như trong mô hình quan hệ, khi làm việc với Redis, người phát triển thường thiết kế tên key và cấu trúc dữ liệu dựa trên chính những thao tác mà ứng dụng cần thực hiện.
+Redis (viết tắt của \emph{Remote Dictionary Server}) là một hệ lưu trữ dữ liệu thuộc nhóm NoSQL, được Salvatore Sanfilippo phát triển vào năm 2009. Ra đời từ nhu cầu cải thiện tốc độ cho một ứng dụng web, Redis nhanh chóng trở nên phổ biến nhờ tốc độ vượt trội và cách sử dụng đơn giản. Ngày nay, Redis được rất nhiều công ty công nghệ lớn sử dụng và có mặt trên hầu hết các nền tảng điện toán đám mây dưới dạng dịch vụ có sẵn.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.3\textwidth]{image/chapter2/redis.png}
     \caption{Redis}
+    \label{fig:redis-logo}
 \end{figure}
 
-\subsubsection{Cấu trúc dữ liệu và cách truy xuất}
+\subsubsection{Đặc điểm nổi bật}
 
-Redis hỗ trợ nhiều cấu trúc dữ liệu, mỗi loại phù hợp với một mục đích riêng. \textit{String} thích hợp để lưu một giá trị đơn lẻ hoặc một bộ đếm; \textit{Hash} dùng để nhóm các trường của một đối tượng; \textit{Set} lưu một tập các phần tử không trùng nhau; còn \textit{Sorted Set} gắn mỗi phần tử với một điểm số để có thể sắp xếp và truy vấn theo khoảng. Ngoài ra, mỗi key có thể được đặt thời gian sống (TTL) và sẽ tự động bị xoá khi hết hạn. Cách tổ chức này rất thuận tiện cho bộ nhớ đệm, bộ đếm và các dữ liệu tạm thời, nhưng đồng thời cũng đòi hỏi ứng dụng phải tự chọn cấu trúc phù hợp và tự duy trì các mối quan hệ giữa dữ liệu.
+Khác với các hệ quản trị cơ sở dữ liệu truyền thống, Redis lưu toàn bộ dữ liệu trong \textbf{bộ nhớ chính} (RAM) thay vì trên đĩa. Đây chính là lý do giúp Redis có tốc độ đọc ghi rất cao, mỗi thao tác thường chỉ mất một khoảng thời gian rất nhỏ. Redis tổ chức dữ liệu theo mô hình \textbf{khoá -- giá trị}: mỗi dữ liệu được gắn với một khoá duy nhất và được truy cập trực tiếp thông qua khoá đó. Điểm đặc biệt là giá trị không chỉ là một chuỗi đơn giản mà có thể là nhiều dạng cấu trúc dữ liệu khác nhau như danh sách, tập hợp hay tập hợp có thứ tự, giúp người phát triển dễ dàng biểu diễn những dữ liệu như bảng xếp hạng, bộ đếm hay hàng đợi.
 
-\subsubsection{Lưu bền và thực thi lệnh}
+Bên cạnh tốc độ, Redis còn có cách sử dụng đơn giản và linh hoạt, vì không đòi hỏi phải định nghĩa trước cấu trúc của dữ liệu. Mỗi dữ liệu có thể được đặt thời gian sống và tự động bị xoá khi hết hạn, điều rất thuận tiện cho các dữ liệu tạm thời. Mặc dù làm việc chủ yếu trên bộ nhớ, Redis vẫn có thể ghi dữ liệu xuống đĩa để khôi phục khi khởi động lại. Tuy nhiên, đổi lại cho tốc độ và sự đơn giản, Redis không hỗ trợ truy vấn phức tạp như SQL, không có các ràng buộc toàn vẹn, và lượng dữ liệu có thể lưu bị giới hạn bởi dung lượng bộ nhớ.
 
-Mặc dù các thao tác chủ yếu diễn ra trong bộ nhớ, Redis vẫn có thể lưu dữ liệu xuống đĩa bằng ảnh chụp RDB, tệp nhật ký lệnh AOF hoặc kết hợp cả hai. Mức độ bền vững và lượng dữ liệu có thể bị mất khi có sự cố phụ thuộc vào cách cấu hình, vì vậy không nên mặc định rằng mọi dữ liệu trong Redis đều là dữ liệu tạm, cũng như không nên mặc định rằng chúng luôn được bảo toàn. Bên cạnh các lệnh đơn lẻ, Redis còn cho phép thực thi một nhóm lệnh bằng \texttt{MULTI/EXEC} hoặc bằng script Lua. Tuy nhiên, cần lưu ý rằng khi một lệnh trong \texttt{MULTI/EXEC} bị lỗi lúc thực thi, Redis không tự hoàn tác các lệnh đã thành công trước đó.
+\subsubsection{Ứng dụng}
+
+Nhờ tốc độ cao, Redis thường được dùng làm \textbf{bộ nhớ đệm} (cache) đứng trước một cơ sở dữ liệu chính, giúp giảm tải và rút ngắn thời gian phản hồi cho những dữ liệu được truy cập thường xuyên. Ngoài ra, Redis còn được ứng dụng rộng rãi để lưu phiên đăng nhập của người dùng, xây dựng bảng xếp hạng trong trò chơi, đếm lượt xem và lượt thích, giới hạn số lần truy cập của người dùng, làm hàng đợi công việc hoặc truyền tin nhắn theo thời gian thực. Nói cách khác, Redis phù hợp với những dữ liệu cần được truy cập tức thời, có cấu trúc đơn giản và có thể chấp nhận mất một phần nhỏ khi xảy ra sự cố.
 
 \subsection{So sánh tổng quan MS SQL Server và Redis}
 \label{subsec:mssql-vs-redis}
 
+Từ những giới thiệu trên, có thể thấy SQL Server và Redis được thiết kế cho những mục đích khá khác nhau. Bảng~\ref{tab:overview-comparison} tóm tắt sự khác biệt giữa hai hệ quản trị ở một số khía cạnh chính.
+
 \begin{table}[H]
 \centering
 \small
+\renewcommand{\arraystretch}{1.3}
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{3cm}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
 \hline
 \textbf{Tiêu chí} & \textbf{Microsoft SQL Server} & \textbf{Redis} \\ \hline
-Mô hình dữ liệu & Mô hình quan hệ gồm bảng, hàng, cột, khoá và ràng buộc. & Mô hình khoá -- giá trị với String, Hash, Set, Sorted Set và các cấu trúc khác. \\ \hline
-Truy xuất & T-SQL hỗ trợ truy vấn khai báo, nối bảng và tổng hợp; bộ tối ưu tự chọn kế hoạch thực thi. & Các lệnh thao tác trực tiếp trên key và cấu trúc dữ liệu; cách truy cập phụ thuộc vào thiết kế của ứng dụng. \\ \hline
-Lưu trữ và độ bền & Dữ liệu và nhật ký được lưu bền trên đĩa; RAM đóng vai trò vùng đệm. & Dữ liệu chủ yếu nằm trên RAM; có thể cấu hình lưu xuống đĩa bằng RDB, AOF hoặc kết hợp cả hai. \\ \hline
-Toàn vẹn và giao tác & Có ràng buộc quan hệ và giao tác hỗ trợ rollback. & Mỗi lệnh và mỗi script chạy nguyên tử; \texttt{MULTI/EXEC} không rollback khi có lỗi lúc thực thi. \\ \hline
+Loại hệ quản trị & Hệ quản trị cơ sở dữ liệu quan hệ (SQL). & Hệ lưu trữ khoá -- giá trị trong bộ nhớ (NoSQL). \\ \hline
+Cách tổ chức dữ liệu & Các bảng có cấu trúc định trước và quan hệ với nhau. & Các cặp khoá -- giá trị, không cần định nghĩa cấu trúc trước. \\ \hline
+Nơi lưu dữ liệu & Chủ yếu trên đĩa. & Chủ yếu trên bộ nhớ chính. \\ \hline
+Thế mạnh & Dữ liệu toàn vẹn, an toàn; truy vấn linh hoạt và phức tạp. & Tốc độ đọc ghi rất cao; sử dụng đơn giản. \\ \hline
+Hạn chế & Tốc độ chậm hơn với lượng truy cập rất lớn. & Không hỗ trợ truy vấn phức tạp; dung lượng bị giới hạn bởi bộ nhớ; có thể mất một ít dữ liệu khi gặp sự cố. \\ \hline
+Ứng dụng tiêu biểu & Ngân hàng, kế toán, quản lý bán hàng, hệ thống doanh nghiệp. & Bộ nhớ đệm, phiên đăng nhập, bộ đếm, bảng xếp hạng, hàng đợi. \\ \hline
 \end{tabularx}
-\caption{So sánh tổng quan SQL Server và Redis trong phạm vi đề tài}
+\caption{So sánh tổng quan SQL Server và Redis}
 \label{tab:overview-comparison}
 \end{table}
+
+Qua bảng so sánh, có thể thấy hai hệ quản trị không cạnh tranh trực tiếp với nhau mà mỗi bên mạnh ở một khía cạnh riêng: SQL Server đặt sự an toàn và toàn vẹn của dữ liệu lên hàng đầu, còn Redis ưu tiên tốc độ. Chính vì vậy, trong nhiều hệ thống thực tế, hai loại hệ quản trị này thường được sử dụng kết hợp với nhau. Những khác biệt này sẽ được phân tích sâu hơn về mặt cơ chế và kiểm chứng bằng thực nghiệm trong Chương~\ref{sec:dbms-topics}.
